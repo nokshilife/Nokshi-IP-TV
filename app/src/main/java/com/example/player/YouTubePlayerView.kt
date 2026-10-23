@@ -79,6 +79,25 @@ fun YouTubePlayerView(
                     return false
                 }
 
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: android.webkit.WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    // If server embed fails to load, fall back to embedded HTML
+                    if (request?.isForMainFrame == true) {
+                        val fallbackHtml = buildYouTubeHtml(videoId)
+                        view?.loadDataWithBaseURL(
+                            "https://bcs24admin.org.bd",
+                            fallbackHtml,
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     try {
@@ -92,39 +111,45 @@ fun YouTubePlayerView(
                 }
             }
 
-            addJavascriptInterface(
-                object {
-                    @JavascriptInterface
-                    fun onPlaying() {
-                        mainHandler.post { onPlaybackStarted() }
-                    }
+            val bridgeObject = object {
+                @JavascriptInterface
+                fun onYoutubeStarted() {
+                    mainHandler.post { onPlaybackStarted() }
+                }
 
-                    @JavascriptInterface
-                    fun onBuffering() {
-                        mainHandler.post { onPlaybackStarted() }
-                    }
+                @JavascriptInterface
+                fun onYoutubeError(errorCode: Int) {
+                    mainHandler.post { onPlaybackError("YouTube error code: $errorCode") }
+                }
 
-                    @JavascriptInterface
-                    fun onError(errorCode: Int) {
-                        mainHandler.post { onPlaybackError("YouTube error code: $errorCode") }
-                    }
-                },
-                "AndroidInterface"
-            )
+                @JavascriptInterface
+                fun onPlaying() {
+                    mainHandler.post { onPlaybackStarted() }
+                }
+
+                @JavascriptInterface
+                fun onBuffering() {
+                    mainHandler.post { onPlaybackStarted() }
+                }
+
+                @JavascriptInterface
+                fun onError(errorCode: Int) {
+                    mainHandler.post { onPlaybackError("YouTube error code: $errorCode") }
+                }
+            }
+
+            // Expose both bridge names for total compatibility with uploaded youtube_embed.html
+            addJavascriptInterface(bridgeObject, "AndroidBridge")
+            addJavascriptInterface(bridgeObject, "AndroidInterface")
         }
     }
 
     LaunchedEffect(videoId) {
         if (videoId.isNotEmpty()) {
-            val html = buildYouTubeHtml(videoId)
-            // Use domain as baseUrl to provide authorized Referer and Origin headers
-            webView.loadDataWithBaseURL(
-                "https://bcs24admin.org.bd",
-                html,
-                "text/html",
-                "UTF-8",
-                null
-            )
+            // First attempt: Load hosted youtube_embed.html from https://bcs24admin.org.bd/tv/youtube_embed.html?id=...
+            // As uploaded by the user, this provides an authentic HTTPS origin that solves YouTube bot verification & TV playback
+            val serverEmbedUrl = "https://bcs24admin.org.bd/tv/youtube_embed.html?id=$videoId"
+            webView.loadUrl(serverEmbedUrl)
         }
     }
 

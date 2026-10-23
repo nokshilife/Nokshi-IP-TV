@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -22,8 +23,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -105,6 +108,9 @@ fun HomeScreen(
     val isFullscreen by viewModel.isFullscreen.collectAsState()
     val serverSyncState by viewModel.serverSyncState.collectAsState()
     val sleepTimerSeconds by viewModel.sleepTimerSeconds.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val isSettingsOpen by viewModel.isSettingsOpen.collectAsState()
     val isPinDialogOpen by viewModel.isPinDialogOpen.collectAsState()
@@ -235,8 +241,307 @@ fun HomeScreen(
                     )
                 }
             }
+        } else if (isLandscape) {
+            // Android TV & Landscape Two-Pane Layout
+            // Left: Player + Channel Info + TV Controls (Full Screen, Favorite, Settings, Sleep, Refresh)
+            // Right: Tabs + Categories + Channel Grid (Both fully visible & D-pad navigable on TV!)
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0F1715))
+            ) {
+                // Left Pane (Video Player & TV Controls)
+                Column(
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .fillMaxHeight()
+                        .padding(12.dp)
+                ) {
+                    // Mini Header: App Logo + Title + Server Sync / Live Indicator
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.app_logo),
+                            contentDescription = "App Logo",
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Nokshi IP TV",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = "Android TV Live",
+                                color = Color(0xFF80CBC4),
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (currentChannel?.type == ChannelType.YOUTUBE) Color(0xFFE53935) else Color(0xFF00897B)
+                        ) {
+                            Text(
+                                text = if (currentChannel?.type == ChannelType.YOUTUBE) "YT LIVE" else "IPTV",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // 16:9 Video Player Box inside Left Pane
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                    ) {
+                        currentChannel?.let { ch ->
+                            androidx.compose.runtime.key(ch.id) {
+                                if (ch.type == ChannelType.YOUTUBE) {
+                                    val videoId = ch.getYouTubeVideoId() ?: ""
+                                    YouTubePlayerView(
+                                        videoId = videoId,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                                    )
+                                } else {
+                                    ExoPlayerView(
+                                        streamUrl = ch.streamUrl,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                        onDoubleTap = { viewModel.toggleFullscreen() }
+                                    )
+                                }
+                            }
+                        } ?: run {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "কোনো চ্যানেল নির্বাচিত নেই",
+                                    color = Color(0xFF88A29B),
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+
+                        FlashBanner(
+                            isVisible = isFlashBannerVisible,
+                            channelName = currentChannel?.name ?: "",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Channel Name & Category Details
+                    Text(
+                        text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = currentChannel?.groupTitle?.takeIf { it.isNotEmpty() } ?: "Nokshi IP TV",
+                        color = Color(0xFF80CBC4),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // TV Action Buttons Row (Full Screen, Favorite, Settings, Sleep Timer, Refresh)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Prominent Full Screen Button
+                        FullScreenButton(
+                            onClick = { viewModel.setFullscreen(true) }
+                        )
+
+                        // Favorite Button
+                        currentChannel?.let { ch ->
+                            TvActionButton(
+                                onClick = { viewModel.toggleFavorite(ch) },
+                                icon = if (ch.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                tint = if (ch.isFavorite) Color(0xFFFFD600) else Color.White,
+                                contentDescription = "Favorite",
+                                label = if (ch.isFavorite) "পছন্দ" else "ফেভারিট"
+                            )
+                        }
+
+                        // Settings Button (Directly accessible on Android TV!)
+                        TvActionButton(
+                            onClick = { viewModel.openSettings() },
+                            icon = Icons.Default.Settings,
+                            tint = Color(0xFFFF9800),
+                            contentDescription = "সেটিংস",
+                            label = "সেটিংস"
+                        )
+
+                        // Sleep Timer Button
+                        TvActionButton(
+                            onClick = { viewModel.openSleepTimerDialog() },
+                            icon = Icons.Default.Bedtime,
+                            tint = if (sleepTimerSeconds > 0) Color(0xFFFFB300) else Color(0xFFB0BEC5),
+                            contentDescription = "স্লিপ",
+                            label = if (sleepTimerSeconds > 0) "${sleepTimerSeconds / 60}m" else "স্লিপ"
+                        )
+
+                        // Refresh / Sync Button
+                        TvActionButton(
+                            onClick = { viewModel.checkServer(forceUpdate = true) },
+                            icon = Icons.Default.Refresh,
+                            tint = Color(0xFF80CBC4),
+                            contentDescription = "রিফ্রেশ",
+                            label = "রিফ্রেশ"
+                        )
+                    }
+                }
+
+                // Right Pane: Top Tabs (YouTube / M3U / Favorites) + Categories + Channel Grid
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color(0xFF141E1C))
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    // TV Navigation Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TvTabButton(
+                            title = "YouTube লাইভ",
+                            isSelected = activeTab == "YOUTUBE",
+                            icon = Icons.Default.Videocam,
+                            accentColor = Color(0xFFFF5252),
+                            onClick = { viewModel.setActiveTab("YOUTUBE") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TvTabButton(
+                            title = "M3U প্লেলিস্ট",
+                            isSelected = activeTab == "M3U",
+                            icon = Icons.Default.Tv,
+                            accentColor = Color(0xFF00E676),
+                            onClick = { viewModel.setActiveTab("M3U") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TvTabButton(
+                            title = "প্রিয় চ্যানেল",
+                            isSelected = activeTab == "FAVORITES",
+                            icon = Icons.Default.Star,
+                            accentColor = Color(0xFFFFD600),
+                            onClick = { viewModel.setActiveTab("FAVORITES") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Category Filter Chips
+                    if (availableGroups.size > 1) {
+                        LazyRow(
+                            contentPadding = PaddingValues(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(availableGroups) { group ->
+                                val isSelected = if (selectedGroup == null) group == "All" else selectedGroup == group
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.setSelectedGroup(if (group == "All") null else group)
+                                    },
+                                    label = {
+                                        Text(
+                                            text = if (group == "All") "সকল" else group,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFFFF9800),
+                                        selectedLabelColor = Color.Black,
+                                        containerColor = Color(0xFF1B2825),
+                                        labelColor = Color(0xFFE0F2F1)
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // Channel Grid (Visible right beside the player on TV!)
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (visibleChannels.isEmpty()) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tv,
+                                    contentDescription = null,
+                                    tint = Color(0xFF3E5751),
+                                    modifier = Modifier.size(44.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = if (activeTab == "M3U") "কোনো M3U চ্যানেল নেই" else "কোনো চ্যানেল পাওয়া যায়নি",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 115.dp),
+                                contentPadding = PaddingValues(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(visibleChannels, key = { it.id }) { ch ->
+                                    TvFocusCard(
+                                        channel = ch,
+                                        isSelected = currentChannel?.id == ch.id,
+                                        onClick = { viewModel.selectChannel(ch) },
+                                        onToggleFavorite = { viewModel.toggleFavorite(ch) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         } else {
-            // Standard Mobile & Android TV View
+            // Standard Mobile Portrait View
             Scaffold(
                 containerColor = Color(0xFF0F1715),
                 bottomBar = {
@@ -747,4 +1052,126 @@ private fun FullScreenButton(
         }
     }
 }
+
+@Composable
+private fun TvActionButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    contentDescription: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1.0f,
+        label = "act_btn_scale"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isFocused) Color(0xFFFF9800) else Color(0xFF1E2D29),
+        border = BorderStroke(
+            width = if (isFocused) 2.dp else 1.dp,
+            color = if (isFocused) Color(0xFFFFD54F) else Color(0x33FFFFFF)
+        ),
+        modifier = modifier
+            .scale(scale)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onClick() }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (isFocused) Color.Black else tint,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                color = if (isFocused) Color.Black else Color.White,
+                fontSize = 11.sp,
+                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvTabButton(
+    title: String,
+    isSelected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.04f else 1.0f,
+        label = "tab_btn_scale"
+    )
+
+    val bgColor = when {
+        isFocused -> Color(0xFFFF9800)
+        isSelected -> Color(0xFF263833)
+        else -> Color(0xFF1B2624)
+    }
+
+    val contentColor = when {
+        isFocused -> Color.Black
+        isSelected -> accentColor
+        else -> Color(0xFF88A29B)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+        border = BorderStroke(
+            width = if (isFocused) 2.dp else if (isSelected) 1.5.dp else 1.dp,
+            color = if (isFocused) Color(0xFFFFD54F) else if (isSelected) accentColor else Color(0x22FFFFFF)
+        ),
+        modifier = modifier
+            .scale(scale)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onClick() }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = contentColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = title,
+                color = contentColor,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 
