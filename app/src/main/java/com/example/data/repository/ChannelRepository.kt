@@ -175,8 +175,26 @@ class ChannelRepository(private val context: Context) {
         }
     }
 
-    suspend fun checkServerSync(onUpdating: (String) -> Unit): Result<String> =
-        serverCheckService.performServerCheck(onUpdating)
+    suspend fun syncChannelsWithServer(): Result<Int> = withContext(Dispatchers.IO) {
+        val result = serverCheckService.fetchLiveChannelsFromServer()
+        if (result.isSuccess) {
+            val list = result.getOrNull() ?: emptyList()
+            if (list.isNotEmpty()) {
+                channelDao.deleteChannelsByType(ChannelType.YOUTUBE.name)
+                channelDao.insertChannels(list.map { ChannelEntity.fromDomain(it) })
+                Log.d("ChannelRepo", "Synced ${list.size} channels from MySQL server API")
+                return@withContext Result.success(list.size)
+            }
+        }
+        Result.failure(result.exceptionOrNull() ?: Exception("No channels returned from server"))
+    }
+
+    suspend fun checkServerSync(onUpdating: (String) -> Unit): Result<String> {
+        val checkResult = serverCheckService.performServerCheck(onUpdating)
+        // Also attempt live channels sync from MySQL
+        syncChannelsWithServer()
+        return checkResult
+    }
 
     suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
         playlistDao.deletePlaylistById(id)
