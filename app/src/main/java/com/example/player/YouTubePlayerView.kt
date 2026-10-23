@@ -1,8 +1,9 @@
 package com.example.player
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -28,6 +29,7 @@ fun YouTubePlayerView(
     onPlaybackError: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     val webView = remember(context) {
         WebView(context).apply {
@@ -40,26 +42,41 @@ fun YouTubePlayerView(
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                databaseEnabled = true
                 mediaPlaybackRequiresUserGesture = false
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 cacheMode = WebSettings.LOAD_DEFAULT
                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
             }
 
             webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {}
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    // Page loaded: Notify that playback / buffering is active
+                    mainHandler.postDelayed({
+                        onPlaybackStarted()
+                    }, 1200)
+                }
+            }
 
             addJavascriptInterface(
                 object {
                     @JavascriptInterface
                     fun onPlaying() {
-                        post { onPlaybackStarted() }
+                        mainHandler.post { onPlaybackStarted() }
+                    }
+
+                    @JavascriptInterface
+                    fun onBuffering() {
+                        mainHandler.post { onPlaybackStarted() }
                     }
 
                     @JavascriptInterface
                     fun onError(errorCode: Int) {
-                        post { onPlaybackError("YouTube Player Error ($errorCode)") }
+                        mainHandler.post { onPlaybackError("YouTube error code: $errorCode") }
                     }
                 },
                 "AndroidInterface"
@@ -67,12 +84,17 @@ fun YouTubePlayerView(
         }
     }
 
-    DisposableEffect(videoId) {
-        val html = buildYouTubeHtml(videoId)
-        webView.loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+    androidx.compose.runtime.LaunchedEffect(videoId) {
+        if (videoId.isNotEmpty()) {
+            val html = buildYouTubeHtml(videoId)
+            webView.loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+        }
+    }
 
+    DisposableEffect(Unit) {
         onDispose {
-            webView.loadUrl("about:blank")
+            webView.stopLoading()
+            webView.destroy()
         }
     }
 
@@ -93,52 +115,45 @@ private fun buildYouTubeHtml(videoId: String): String {
             <style>
                 * { margin:0; padding:0; box-sizing:border-box; background-color:#000000; overflow:hidden; }
                 html, body { width:100%; height:100%; }
-                #player { width:100%; height:100%; position:absolute; top:0; left:0; }
+                #player-container { width:100%; height:100%; position:relative; }
+                iframe { width:100%; height:100%; border:0; }
             </style>
         </head>
         <body>
-            <div id="player"></div>
+            <div id="player-container">
+                <iframe id="ytplayer"
+                    src="https://www.youtube.com/embed/$videoId?autoplay=1&enablejsapi=1&playsinline=1&rel=0&modestbranding=1"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
+            </div>
             <script>
-                var tag = document.createElement('script');
-                tag.src = "https://www.youtube.com/iframe_api";
-                var firstScriptTag = document.getElementsByTagName('script')[0];
-                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                // Listen to postMessage events from YouTube embed
+                window.addEventListener('message', function(event) {
+                    try {
+                        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                        if (data && data.event === 'onStateChange') {
+                            if (data.info === 1 || data.info === 3) { // PLAYING or BUFFERING
+                                if (window.AndroidInterface) {
+                                    window.AndroidInterface.onPlaying();
+                                }
+                            }
+                        } else if (data && data.event === 'onError') {
+                            if (window.AndroidInterface) {
+                                window.AndroidInterface.onError(data.info);
+                            }
+                        }
+                    } catch (e) {}
+                });
 
-                var player;
-                function onYouTubeIframeAPIReady() {
-                    player = new YT.Player('player', {
-                        videoId: '$videoId',
-                        playerVars: {
-                            'autoplay': 1,
-                            'playsinline': 1,
-                            'controls': 1,
-                            'rel': 0,
-                            'modestbranding': 1,
-                            'fs': 1,
-                            'origin': 'https://www.youtube.com'
-                        },
-                        events: {
-                            'onReady': onPlayerReady,
-                            'onStateChange': onPlayerStateChange,
-                            'onError': onPlayerError
-                        }
-                    });
-                }
-                function onPlayerReady(event) {
-                    event.target.playVideo();
-                }
-                function onPlayerStateChange(event) {
-                    if (event.data === 1) { // YT.PlayerState.PLAYING
+                // Fallback: Notify Android after DOM is ready
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(function() {
                         if (window.AndroidInterface) {
-                            window.AndroidInterface.onPlaying();
+                            window.AndroidInterface.onBuffering();
                         }
-                    }
-                }
-                function onPlayerError(event) {
-                    if (window.AndroidInterface) {
-                        window.AndroidInterface.onError(event.data);
-                    }
-                }
+                    }, 1000);
+                });
             </script>
         </body>
         </html>

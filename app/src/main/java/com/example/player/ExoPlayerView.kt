@@ -42,7 +42,7 @@ fun ExoPlayerView(
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && exoPlayer.isPlaying) {
+                if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
                     onPlaybackStarted()
                 }
             }

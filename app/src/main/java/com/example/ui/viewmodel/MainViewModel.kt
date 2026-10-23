@@ -137,12 +137,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         bannerTimeoutJob?.cancel()
         bannerTimeoutJob = viewModelScope.launch {
-            // User requirement: 5-second timeout for playback start
-            delay(5000)
-            if (_isFlashBannerVisible.value) {
-                Log.w("MainViewModel", "Channel ${channel.name} did not start playing within 5s")
-                handlePlaybackFailure()
-            }
+            // Flash banner is displayed during transition (1.8 seconds)
+            // so the user gets the transition flash, and then the video player buffers and plays cleanly
+            delay(1800)
+            _isFlashBannerVisible.value = false
         }
     }
 
@@ -159,14 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handlePlaybackFailure() {
         _isFlashBannerVisible.value = false
-        consecutiveFailures++
-
-        if (consecutiveFailures <= 3) {
-            playNextChannel()
-        } else {
-            consecutiveFailures = 0
-            _serverSyncState.value = ServerSyncState.Notice("চ্যানেল চালাতে ব্যর্থ হয়েছে। ইন্টারনেট বা স্ট্রিম সার্ভার যাচাই করুন।")
-        }
+        _serverSyncState.value = ServerSyncState.Notice("চ্যানেলটি লোড হতে দেরি হচ্ছে বা স্ট্রিম সাময়িক অফলাইন।")
     }
 
     fun playNextChannel() {

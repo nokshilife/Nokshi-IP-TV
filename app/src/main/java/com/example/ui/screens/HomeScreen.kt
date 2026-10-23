@@ -184,22 +184,24 @@ fun HomeScreen(
             ) {
                 // Video Player
                 currentChannel?.let { ch ->
-                    if (ch.type == ChannelType.YOUTUBE) {
-                        val videoId = ch.getYouTubeVideoId() ?: ""
-                        YouTubePlayerView(
-                            videoId = videoId,
-                            modifier = Modifier.fillMaxSize(),
-                            onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                            onPlaybackError = { err -> viewModel.onPlaybackError(err) }
-                        )
-                    } else {
-                        ExoPlayerView(
-                            streamUrl = ch.streamUrl,
-                            modifier = Modifier.fillMaxSize(),
-                            onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                            onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                            onDoubleTap = { viewModel.toggleFullscreen() }
-                        )
+                    androidx.compose.runtime.key(ch.id) {
+                        if (ch.type == ChannelType.YOUTUBE) {
+                            val videoId = ch.getYouTubeVideoId() ?: ""
+                            YouTubePlayerView(
+                                videoId = videoId,
+                                modifier = Modifier.fillMaxSize(),
+                                onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                            )
+                        } else {
+                            ExoPlayerView(
+                                streamUrl = ch.streamUrl,
+                                modifier = Modifier.fillMaxSize(),
+                                onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                onDoubleTap = { viewModel.toggleFullscreen() }
+                            )
+                        }
                     }
                 }
 
@@ -402,22 +404,24 @@ fun HomeScreen(
                             )
                     ) {
                         currentChannel?.let { ch ->
-                            if (ch.type == ChannelType.YOUTUBE) {
-                                val videoId = ch.getYouTubeVideoId() ?: ""
-                                YouTubePlayerView(
-                                    videoId = videoId,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                    onPlaybackError = { err -> viewModel.onPlaybackError(err) }
-                                )
-                            } else {
-                                ExoPlayerView(
-                                    streamUrl = ch.streamUrl,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                    onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                    onDoubleTap = { viewModel.toggleFullscreen() }
-                                )
+                            androidx.compose.runtime.key(ch.id) {
+                                if (ch.type == ChannelType.YOUTUBE) {
+                                    val videoId = ch.getYouTubeVideoId() ?: ""
+                                    YouTubePlayerView(
+                                        videoId = videoId,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                                    )
+                                } else {
+                                    ExoPlayerView(
+                                        streamUrl = ch.streamUrl,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                        onDoubleTap = { viewModel.toggleFullscreen() }
+                                    )
+                                }
                             }
                         } ?: run {
                             Box(
