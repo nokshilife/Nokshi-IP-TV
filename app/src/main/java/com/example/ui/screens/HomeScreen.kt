@@ -35,9 +35,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Fullscreen
@@ -122,15 +125,40 @@ fun HomeScreen(
     val playlists by viewModel.playlists.collectAsState()
     val settingsStatus by viewModel.settingsStatus.collectAsState()
     val settingsLoading by viewModel.settingsLoading.collectAsState()
+    val m3uVisibleLimit by viewModel.m3uVisibleLimit.collectAsState()
 
     val visibleChannels = remember(
         activeTab,
         selectedGroup,
+        m3uVisibleLimit,
         viewModel.youtubeChannels.collectAsState().value,
         viewModel.m3uChannels.collectAsState().value,
         viewModel.favoriteChannels.collectAsState().value
     ) {
         viewModel.getVisibleChannels()
+    }
+
+    val fullScreenFocusRequester = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
+
+    // User requirement: "যেকোন চ্যানেল চেঞ্জের পর ফুল স্ক্রিন বাটন সেট ফোকাসে থাকবে যাতে সহজে এক প্রেসে ফুল স্ক্রিন করতে পারি।"
+    LaunchedEffect(currentChannel?.id) {
+        if (currentChannel != null && !isFullscreen) {
+            kotlinx.coroutines.delay(200)
+            try {
+                fullScreenFocusRequester.requestFocus()
+            } catch (e: Exception) {}
+        }
+    }
+
+    // User requirement: "m3u তে যেহেতু অনেক চ্যানেল থাকবে তাই Lazy Load টেকনোলোজি ব্যবহার করবেন।"
+    LaunchedEffect(gridState.firstVisibleItemIndex, visibleChannels.size) {
+        if (activeTab == "M3U") {
+            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            if (lastVisible >= visibleChannels.size - 10) {
+                viewModel.loadMoreM3uChannels()
+            }
+        }
     }
 
     // Extract categories/groups for current tab
@@ -377,9 +405,10 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Prominent Full Screen Button
+                        // Prominent Full Screen Button (Auto-focused on channel change!)
                         FullScreenButton(
-                            onClick = { viewModel.setFullscreen(true) }
+                            onClick = { viewModel.setFullscreen(true) },
+                            focusRequester = fullScreenFocusRequester
                         )
 
                         // Favorite Button
@@ -463,7 +492,7 @@ fun HomeScreen(
                         )
                     }
 
-                    // Category Filter Chips
+                    // Category Filter Chips (With amber/brown focus border requested by user)
                     if (availableGroups.size > 1) {
                         LazyRow(
                             contentPadding = PaddingValues(vertical = 4.dp),
@@ -472,30 +501,18 @@ fun HomeScreen(
                         ) {
                             items(availableGroups) { group ->
                                 val isSelected = if (selectedGroup == null) group == "All" else selectedGroup == group
-                                FilterChip(
-                                    selected = isSelected,
+                                TvGroupChip(
+                                    text = if (group == "All") "সকল" else group,
+                                    isSelected = isSelected,
                                     onClick = {
                                         viewModel.setSelectedGroup(if (group == "All") null else group)
-                                    },
-                                    label = {
-                                        Text(
-                                            text = if (group == "All") "সকল" else group,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFFFF9800),
-                                        selectedLabelColor = Color.Black,
-                                        containerColor = Color(0xFF1B2825),
-                                        labelColor = Color(0xFFE0F2F1)
-                                    )
+                                    }
                                 )
                             }
                         }
                     }
 
-                    // Channel Grid (Visible right beside the player on TV!)
+                    // Channel Grid (Visible right beside the player on TV, lazy loaded!)
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         if (visibleChannels.isEmpty()) {
                             Column(
@@ -522,6 +539,7 @@ fun HomeScreen(
                         } else {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 115.dp),
+                                state = gridState,
                                 contentPadding = PaddingValues(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -860,13 +878,14 @@ fun HomeScreen(
                                 // User explicitly requested Full Screen button below YouTube Player
                                 // Styled for touch & TV D-pad remote focus highlight
                                 FullScreenButton(
-                                    onClick = { viewModel.setFullscreen(true) }
+                                    onClick = { viewModel.setFullscreen(true) },
+                                    focusRequester = fullScreenFocusRequester
                                 )
                             }
                         }
                     }
 
-                    // Category Filter Chips
+                    // Category Filter Chips (With amber/brown focus border requested by user)
                     if (availableGroups.size > 1) {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -875,24 +894,12 @@ fun HomeScreen(
                         ) {
                             items(availableGroups) { group ->
                                 val isSelected = if (selectedGroup == null) group == "All" else selectedGroup == group
-                                FilterChip(
-                                    selected = isSelected,
+                                TvGroupChip(
+                                    text = if (group == "All") "সকল" else group,
+                                    isSelected = isSelected,
                                     onClick = {
                                         viewModel.setSelectedGroup(if (group == "All") null else group)
-                                    },
-                                    label = {
-                                        Text(
-                                            text = if (group == "All") "সকল" else group,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFFFF9800),
-                                        selectedLabelColor = Color.Black,
-                                        containerColor = Color(0xFF1B2825),
-                                        labelColor = Color(0xFFE0F2F1)
-                                    )
+                                    }
                                 )
                             }
                         }
@@ -931,6 +938,7 @@ fun HomeScreen(
                         } else {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 130.dp),
+                                state = gridState,
                                 contentPadding = PaddingValues(8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1007,7 +1015,8 @@ fun HomeScreen(
 @Composable
 private fun FullScreenButton(
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -1021,11 +1030,12 @@ private fun FullScreenButton(
         shape = RoundedCornerShape(8.dp),
         color = if (isFocused) Color(0xFFFF9800) else Color(0xFF263238),
         border = BorderStroke(
-            width = if (isFocused) 2.dp else 1.dp,
+            width = if (isFocused) 2.5.dp else 1.dp,
             color = if (isFocused) Color(0xFFFFD54F) else Color(0xFF455A64)
         ),
         modifier = modifier
             .scale(scale)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
@@ -1050,6 +1060,67 @@ private fun FullScreenButton(
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+
+// User requirement 4:
+// "M3U প্লেলিস্টের আন্ডারে থাকা বিভিন্ন গ্রুপের মাঝে নেভিগেট করতে গেলে কোন গ্রুপ সিলেক্ট করতে যাচ্ছি তা বোঝা যায়না। অন্য থাম্বনেইলের মতো বাদামী বর্ডার দিয়ে দেন।"
+@Composable
+private fun TvGroupChip(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1.0f,
+        label = "group_chip_scale"
+    )
+
+    // Distinct Amber / Brown border on D-pad TV focus, matching channel thumbnails
+    val borderColor = when {
+        isFocused -> Color(0xFFFF9800) // Vibrant TV focus amber / brown
+        isSelected -> Color(0xFFFFB300)
+        else -> Color(0x33FFFFFF)
+    }
+
+    val borderWidth = if (isFocused) 2.5.dp else if (isSelected) 1.5.dp else 1.dp
+
+    val containerColor = when {
+        isFocused && isSelected -> Color(0xFFFF9800)
+        isFocused -> Color(0xFF2D2319) // Warm dark brown focus container
+        isSelected -> Color(0xFFFF9800)
+        else -> Color(0xFF1B2825)
+    }
+
+    val textColor = when {
+        isSelected -> Color.Black
+        isFocused -> Color(0xFFFFD54F) // Bright amber text on focus
+        else -> Color(0xFFE0F2F1)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = containerColor,
+        border = BorderStroke(borderWidth, borderColor),
+        modifier = modifier
+            .scale(scale)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onClick() }
+    ) {
+        Text(
+            text = text,
+            color = textColor,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+        )
     }
 }
 

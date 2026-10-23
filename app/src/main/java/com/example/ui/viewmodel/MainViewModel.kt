@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,7 +23,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val repository = ChannelRepository(application)
 
+    // User requirement: "ইউটিউব চ্যানেল display_order অনুযায়ী sort করবেন।"
     val youtubeChannels: StateFlow<List<Channel>> = repository.getYouTubeChannels()
+        .map { list -> list.sortedWith(compareBy({ it.displayOrder }, { it.id })) }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val m3uChannels: StateFlow<List<Channel>> = repository.getM3uChannels()
@@ -33,6 +36,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val playlists: StateFlow<List<Playlist>> = repository.getPlaylists()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // Lazy load paging for M3U channels
+    private val _m3uVisibleLimit = MutableStateFlow(80)
+    val m3uVisibleLimit: StateFlow<Int> = _m3uVisibleLimit.asStateFlow()
+
+    fun loadMoreM3uChannels() {
+        _m3uVisibleLimit.value += 60
+    }
 
     private val _activeTab = MutableStateFlow("YOUTUBE") // YOUTUBE, M3U, FAVORITES
     val activeTab: StateFlow<String> = _activeTab.asStateFlow()
@@ -110,6 +121,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _activeTab.value = tab
         repository.preferences.lastSelectedTab = tab
         _selectedGroup.value = null
+        _m3uVisibleLimit.value = 80 // Reset lazy load window
 
         // Select first channel in new tab if available
         val channels = when (tab) {
@@ -125,6 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSelectedGroup(group: String?) {
         _selectedGroup.value = group
+        _m3uVisibleLimit.value = 80 // Reset lazy load window on category switch
     }
 
     private var isPlaybackStarted = false
@@ -146,14 +159,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isFlashBannerVisible.value = false
         }
 
-        // User requirement:
-        // "যেকো ভিডিও লোড হওয়ার জন্য কমপক্ষে ৫ সেকেন্ড সময় পাবে। এর মধ্যে লোড হতে ব্যর্থ হলে পরবর্তি চ্যানেলে সুইচ করবে। কোন চ্যানেল একবার চালু হবার পর মাঝ পথে আটকে গেলে আর সুইচ করবে না।"
+        // TV / Mobile Watchdog:
+        // Give the video up to 10 seconds to buffer/initiate before auto-switching.
+        // Once playback starts, isPlaybackStarted = true cancels this watchdog and mid-stream buffering never switches.
         loadingWatchdogJob?.cancel()
         loadingWatchdogJob = viewModelScope.launch {
-            delay(6000) // At least 5 seconds window
+            delay(10000) // 10 seconds safe window for TV network loading
             if (!isPlaybackStarted) {
-                Log.w("MainViewModel", "Channel ${channel.name} failed to load within 6s. Auto-switching to next channel.")
-                _serverSyncState.value = ServerSyncState.Notice("${channel.name} লোড হতে ব্যর্থ, পরবর্তী চ্যানেলে যাওয়া হচ্ছে...")
+                Log.w("MainViewModel", "Channel ${channel.name} failed to load within 10s. Auto-switching to next channel.")
+                _serverSyncState.value = ServerSyncState.Notice("${channel.name} লোড হতে বিলম্বিত, পরবর্তী চ্যানেলে যাওয়া হচ্ছে...")
                 playNextChannel()
             }
         }
@@ -358,16 +372,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getVisibleChannels(): List<Channel> {
         val baseList = when (_activeTab.value) {
-            "YOUTUBE" -> youtubeChannels.value
+            "YOUTUBE" -> youtubeChannels.value.sortedWith(compareBy({ it.displayOrder }, { it.id }))
             "M3U" -> m3uChannels.value
             "FAVORITES" -> favoriteChannels.value
             else -> emptyList()
         }
         val group = _selectedGroup.value
-        return if (group.isNullOrEmpty() || group == "All") {
+        val filtered = if (group.isNullOrEmpty() || group == "All") {
             baseList
         } else {
             baseList.filter { it.groupTitle.equals(group, ignoreCase = true) }
+        }
+        return if (_activeTab.value == "YOUTUBE") {
+            filtered.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+        } else if (_activeTab.value == "M3U") {
+            // User requirement: "m3u তে যেহেতু অনেক চ্যানেল থাকবে তাই Lazy Load টেকনোলোজি ব্যবহার করবেন।"
+            filtered.take(_m3uVisibleLimit.value)
+        } else {
+            filtered
         }
     }
 }

@@ -42,6 +42,9 @@ fun YouTubePlayerView(
             )
             setBackgroundColor(Color.BLACK)
 
+            // Enable hardware acceleration for smooth video rendering on Android TV
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+
             // CRITICAL FOR ANDROID TV:
             // Disable D-pad/keyboard focus on the WebView so it does NOT hijack TV remote navigation
             // from the Compose UI (channel cards, tabs, and buttons). Mobile touch gestures still function.
@@ -68,8 +71,11 @@ fun YouTubePlayerView(
                 allowFileAccess = true
                 allowContentAccess = true
                 setSupportMultipleWindows(false)
-                // Modern Chrome user-agent
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.113 Mobile Safari/537.36"
+                javaScriptCanOpenWindowsAutomatically = true
+                // Use native device user agent to avoid anti-bot flags caused by mobile spoofing on Android TV
+                try {
+                    userAgentString = WebSettings.getDefaultUserAgent(context)
+                } catch (e: Exception) {}
             }
 
             webChromeClient = WebChromeClient()
@@ -85,8 +91,25 @@ fun YouTubePlayerView(
                     error: android.webkit.WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
-                    // If server embed fails to load, fall back to embedded HTML
                     if (request?.isForMainFrame == true) {
+                        val fallbackHtml = buildYouTubeHtml(videoId)
+                        view?.loadDataWithBaseURL(
+                            "https://bcs24admin.org.bd",
+                            fallbackHtml,
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: android.webkit.WebResourceResponse?
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 200) >= 400) {
                         val fallbackHtml = buildYouTubeHtml(videoId)
                         view?.loadDataWithBaseURL(
                             "https://bcs24admin.org.bd",
@@ -188,8 +211,8 @@ private fun buildYouTubeHtml(videoId: String): String {
         <body>
             <div id="player-container">
                 <iframe id="ytplayer"
-                    src="https://www.youtube.com/embed/$videoId?autoplay=1&mute=0&enablejsapi=1&playsinline=1&rel=0&modestbranding=1&origin=$originDomain&widget_referrer=$originDomain"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    src="https://www.youtube.com/embed/$videoId?autoplay=1&mute=0&enablejsapi=1&playsinline=1&controls=1&rel=0&modestbranding=1&origin=$originDomain&widget_referrer=$originDomain"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                     allowfullscreen>
                 </iframe>
             </div>
@@ -215,9 +238,24 @@ private fun buildYouTubeHtml(videoId: String): String {
                     try {
                         event.target.playVideo();
                     } catch(e) {}
-                    if (window.AndroidInterface) {
+                    if (window.AndroidBridge && window.AndroidBridge.onYoutubeStarted) {
+                        window.AndroidBridge.onYoutubeStarted();
+                    } else if (window.AndroidInterface) {
                         window.AndroidInterface.onPlaying();
                     }
+
+                    // TV Autoplay fallback: if unmuted autoplay is blocked by TV Chromium policy
+                    setTimeout(function() {
+                        if (player) {
+                            try {
+                                var s = player.getPlayerState();
+                                if (s !== 1 && s !== 3) {
+                                    player.mute();
+                                    player.playVideo();
+                                }
+                            } catch(e) {}
+                        }
+                    }, 2500);
                 }
 
                 function onPlayerStateChange(event) {

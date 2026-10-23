@@ -55,9 +55,15 @@
       player = new YT.Player('player', {
         videoId: videoId,
         playerVars: {
-          autoplay: 1, mute: 0, playsinline: 1, rel: 0, modestbranding: 1,
-          controls: 0, showinfo: 0, iv_load_policy: 3, fs: 0, disablekb: 1,
-          enablejsapi: 1, origin: getOrigin()
+          autoplay: 1,
+          mute: 0,
+          playsinline: 1,
+          controls: 1,
+          rel: 0,
+          modestbranding: 1,
+          iv_load_policy: 3,
+          enablejsapi: 1,
+          origin: getOrigin()
         },
         events: {
           'onReady': onPlayerReady,
@@ -71,20 +77,29 @@
       try {
         var levels = event.target.getAvailableQualityLevels();
         var safeTiersHighToLow = ['hd1080', 'hd720', 'large', 'medium', 'small'];
-        var chosen = null;
         for (var i = 0; i < safeTiersHighToLow.length; i++) {
           if (levels.indexOf(safeTiersHighToLow[i]) !== -1) {
-            chosen = safeTiersHighToLow[i];
+            event.target.setPlaybackQuality(safeTiersHighToLow[i]);
             break;
           }
         }
-        if (chosen) {
-          event.target.setPlaybackQuality(chosen);
-        } else if (levels && levels.length > 0) {
-          event.target.setPlaybackQuality(levels[0]);
-        }
       } catch (e) {}
-      event.target.playVideo();
+
+      try {
+        event.target.playVideo();
+      } catch (e) {}
+
+      setTimeout(function() {
+        if (!startedReported && player) {
+          try {
+            var state = player.getPlayerState();
+            if (state !== 1 && state !== 3) {
+              player.mute();
+              player.playVideo();
+            }
+          } catch(e) {}
+        }
+      }, 2500);
     }
 
     function onPlayerError(event) {
@@ -96,7 +111,7 @@
     }
 
     function onPlayerStateChange(event) {
-      if (event.data === YT.PlayerState.PLAYING && !startedReported) {
+      if ((event.data === 1 || event.data === 3) && !startedReported) {
         startedReported = true;
         if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null; }
         if (bridge) {
