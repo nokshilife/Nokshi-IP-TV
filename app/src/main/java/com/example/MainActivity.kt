@@ -52,23 +52,25 @@ class MainActivity : ComponentActivity() {
         val isFullscreen = viewModel.isFullscreen.value
 
         when (keyCode) {
-            // Left button toggles fullscreen on TV
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (!isFullscreen && viewModel.currentChannel.value != null) {
-                    viewModel.setFullscreen(true)
-                    return true
-                }
+            // In Fullscreen mode, Channel Up / Down or DPAD Up / Down switches channels
+            KeyEvent.KEYCODE_CHANNEL_UP -> {
+                viewModel.playNextChannel()
+                return true
             }
 
-            // In Fullscreen, Channel Up / Down or DPAD Up / Down switches channels
-            KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_DPAD_UP -> {
+            KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                viewModel.playPreviousChannel()
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_UP -> {
                 if (isFullscreen) {
                     viewModel.playNextChannel()
                     return true
                 }
             }
 
-            KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> {
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
                 if (isFullscreen) {
                     viewModel.playPreviousChannel()
                     return true

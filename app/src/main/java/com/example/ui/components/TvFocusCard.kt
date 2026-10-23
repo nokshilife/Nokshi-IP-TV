@@ -84,7 +84,6 @@ fun TvFocusCard(
         border = BorderStroke(borderWidth, borderColor),
         modifier = modifier
             .scale(scale)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null

@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -41,6 +42,20 @@ fun YouTubePlayerView(
             )
             setBackgroundColor(Color.BLACK)
 
+            // CRITICAL FOR ANDROID TV:
+            // Disable D-pad/keyboard focus on the WebView so it does NOT hijack TV remote navigation
+            // from the Compose UI (channel cards, tabs, and buttons). Mobile touch gestures still function.
+            isFocusable = false
+            isFocusableInTouchMode = false
+
+            // CRITICAL FOR YOUTUBE VERIFICATION & SESSION PERSISTENCE:
+            // Enable first-party and third-party cookies so user authentication / human checks persist
+            try {
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
+                cookieManager.setAcceptThirdPartyCookies(this, true)
+            } catch (e: Exception) {}
+
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -53,22 +68,27 @@ fun YouTubePlayerView(
                 allowFileAccess = true
                 allowContentAccess = true
                 setSupportMultipleWindows(false)
-                // Use standard Android Chrome user-agent for optimal HTML5 live stream support
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/UQ1A.240205.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.64 Mobile Safari/537.36"
+                // Modern Chrome user-agent
+                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.113 Mobile Safari/537.36"
             }
 
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    // Prevent external browser launches for internal youtube frame navigation
+                    // Stay within WebView for embedded stream navigation
                     return false
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    try {
+                        CookieManager.getInstance().flush()
+                    } catch (e: Exception) {}
+
+                    // Tell app playback initiated after page finishes
                     mainHandler.postDelayed({
                         onPlaybackStarted()
-                    }, 1500)
+                    }, 1200)
                 }
             }
 
@@ -97,9 +117,7 @@ fun YouTubePlayerView(
     LaunchedEffect(videoId) {
         if (videoId.isNotEmpty()) {
             val html = buildYouTubeHtml(videoId)
-            // CRITICAL FIX FOR ERROR 152-4:
-            // YouTube blocks loadDataWithBaseURL if baseUrl is "https://www.youtube.com" (detects clickjacking/spoofing).
-            // Using "https://bcs24admin.org.bd" supplies a valid Referer header satisfying YouTube's embed requirements.
+            // Use domain as baseUrl to provide authorized Referer and Origin headers
             webView.loadDataWithBaseURL(
                 "https://bcs24admin.org.bd",
                 html,
@@ -145,18 +163,58 @@ private fun buildYouTubeHtml(videoId: String): String {
         <body>
             <div id="player-container">
                 <iframe id="ytplayer"
-                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&enablejsapi=1&playsinline=1&rel=0&modestbranding=1&origin=$originDomain&widget_referrer=$originDomain"
+                    src="https://www.youtube.com/embed/$videoId?autoplay=1&mute=0&enablejsapi=1&playsinline=1&rel=0&modestbranding=1&origin=$originDomain&widget_referrer=$originDomain"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowfullscreen>
                 </iframe>
             </div>
             <script>
-                // Listen to postMessage from YouTube embed API
+                // Load YouTube IFrame API
+                var tag = document.createElement('script');
+                tag.src = "https://www.youtube.com/iframe_api";
+                var firstScriptTag = document.getElementsByTagName('script')[0];
+                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+                var player;
+                function onYouTubeIframeAPIReady() {
+                    player = new YT.Player('ytplayer', {
+                        events: {
+                            'onReady': onPlayerReady,
+                            'onStateChange': onPlayerStateChange,
+                            'onError': onPlayerError
+                        }
+                    });
+                }
+
+                function onPlayerReady(event) {
+                    try {
+                        event.target.playVideo();
+                    } catch(e) {}
+                    if (window.AndroidInterface) {
+                        window.AndroidInterface.onPlaying();
+                    }
+                }
+
+                function onPlayerStateChange(event) {
+                    // 1 = PLAYING, 3 = BUFFERING
+                    if (event.data === 1 || event.data === 3) {
+                        if (window.AndroidInterface) {
+                            window.AndroidInterface.onPlaying();
+                        }
+                    }
+                }
+
+                function onPlayerError(event) {
+                    if (window.AndroidInterface) {
+                        window.AndroidInterface.onError(event.data);
+                    }
+                }
+
+                // Window message listener fallback
                 window.addEventListener('message', function(event) {
                     try {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                         if (data && data.event === 'onStateChange') {
-                            // 1 = PLAYING, 3 = BUFFERING
                             if (data.info === 1 || data.info === 3) {
                                 if (window.AndroidInterface) {
                                     window.AndroidInterface.onPlaying();
@@ -170,7 +228,7 @@ private fun buildYouTubeHtml(videoId: String): String {
                     } catch (e) {}
                 });
 
-                // Fallback: Notify Android that buffer is initiating
+                // Fallback: Notify Android that playback started after 1.8 seconds
                 setTimeout(function() {
                     if (window.AndroidInterface) {
                         window.AndroidInterface.onBuffering();

@@ -4,11 +4,17 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +44,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.ui.draw.scale
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -475,6 +483,84 @@ fun HomeScreen(
                         }
                     }
 
+                    // Dedicated Under-Player Control Bar requested by user
+                    Surface(
+                        color = Color(0xFF141E1C),
+                        tonalElevation = 4.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            // Channel Details
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (currentChannel?.type == ChannelType.YOUTUBE) Color(0xFFE53935) else Color(0xFF00897B),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        text = if (currentChannel?.type == ChannelType.YOUTUBE) "YT LIVE" else "IPTV",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = currentChannel?.groupTitle?.takeIf { it.isNotEmpty() } ?: "Nokshi IP TV",
+                                        color = Color(0xFF80CBC4),
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Action buttons: Favorite & Big Full Screen button
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                currentChannel?.let { ch ->
+                                    IconButton(
+                                        onClick = { viewModel.toggleFavorite(ch) },
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (ch.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                            contentDescription = "Favorite",
+                                            tint = if (ch.isFavorite) Color(0xFFFFD600) else Color(0xFF88A29B),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+
+                                // User explicitly requested Full Screen button below YouTube Player
+                                // Styled for touch & TV D-pad remote focus highlight
+                                FullScreenButton(
+                                    onClick = { viewModel.setFullscreen(true) }
+                                )
+                            }
+                        }
+                    }
+
                     // Category Filter Chips
                     if (availableGroups.size > 1) {
                         LazyRow(
@@ -612,3 +698,53 @@ fun HomeScreen(
         }
     }
 }
+
+@Composable
+private fun FullScreenButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1.0f,
+        label = "fs_btn_scale"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isFocused) Color(0xFFFF9800) else Color(0xFF263238),
+        border = BorderStroke(
+            width = if (isFocused) 2.dp else 1.dp,
+            color = if (isFocused) Color(0xFFFFD54F) else Color(0xFF455A64)
+        ),
+        modifier = modifier
+            .scale(scale)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onClick() }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Fullscreen,
+                contentDescription = "Full Screen",
+                tint = if (isFocused) Color.Black else Color(0xFFFFD54F),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "ফুল স্ক্রিন",
+                color = if (isFocused) Color.Black else Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
