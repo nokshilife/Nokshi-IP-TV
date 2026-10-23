@@ -1,0 +1,6 @@
+{
+  "name": "Nokshi IP TV",
+  "description": "Android TV and Mobile IPTV player supporting YouTube Live, M3U playlists, and Xtream Codes with remote D-pad controls and touch navigation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

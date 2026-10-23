@@ -1,0 +1,458 @@
+package com.example.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.data.model.Playlist
+
+@Composable
+fun PlaylistSettingsDialog(
+    isBuiltInPinVerified: Boolean,
+    playlists: List<Playlist>,
+    isBackgroundAudioEnabled: Boolean,
+    isLoading: Boolean,
+    statusMessage: String?,
+    onLoadBuiltInM3u: () -> Unit,
+    onLoadCustomM3u: (url: String, name: String) -> Unit,
+    onLoadXtream: (server: String, user: String, pass: String) -> Unit,
+    onDeletePlaylist: (id: Long) -> Unit,
+    onToggleBackgroundAudio: (Boolean) -> Unit,
+    onOpenSleepTimer: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("বিল্ট-ইন M3U", "কাস্টম M3U", "Xtream Codes", "অন্যান্য")
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF141E1C),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = Color(0xFFFF9800),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "প্লেলিস্ট ও সেটিংস",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) {
+                        Text("বন্ধ করুন", color = Color(0xFF80CBC4))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Tabs
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color(0xFF1A2623),
+                    contentColor = Color(0xFFFF9800),
+                    edgePadding = 0.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = Color(0xFFFF9800)
+                        )
+                    }
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = {
+                                Text(
+                                    text = title,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selectedTab == index) Color(0xFFFF9800) else Color(0xFFB0BEC5)
+                                )
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (!statusMessage.isNullOrEmpty()) {
+                    Text(
+                        text = statusMessage,
+                        color = if (statusMessage.contains("সফল")) Color(0xFF00E676) else Color(0xFFFF9800),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                // Tab Content
+                Box(modifier = Modifier.weight(1f)) {
+                    when (selectedTab) {
+                        0 -> BuiltInTab(
+                            isVerified = isBuiltInPinVerified,
+                            isLoading = isLoading,
+                            onLoad = onLoadBuiltInM3u
+                        )
+                        1 -> CustomM3uTab(
+                            playlists = playlists,
+                            isLoading = isLoading,
+                            onLoadCustom = onLoadCustomM3u,
+                            onDelete = onDeletePlaylist
+                        )
+                        2 -> XtreamTab(
+                            isLoading = isLoading,
+                            onConnect = onLoadXtream
+                        )
+                        3 -> GeneralSettingsTab(
+                            isBackgroundAudioEnabled = isBackgroundAudioEnabled,
+                            onToggleBackgroundAudio = onToggleBackgroundAudio,
+                            onOpenSleepTimer = onOpenSleepTimer
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuiltInTab(
+    isVerified: Boolean,
+    isLoading: Boolean,
+    onLoad: () -> Unit
+) {
+    Column(modifier = Modifier.padding(8.dp)) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isVerified) Icons.Default.CheckCircle else Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = if (isVerified) Color(0xFF00E676) else Color(0xFFFF9800)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isVerified) "স্ট্যাটাস: আনলকড (ভেরিফাইড)" else "স্ট্যাটাস: ওয়ান-টাইম পিন সুরক্ষিত",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Nokshi IP TV-র অফিশিয়াল বিল্ট-ইন M3U প্লেলিস্ট (বাংলা, স্পোর্টস, ইসলামিক, মুভিজ, ইত্যাদিসহ)।",
+                    color = Color(0xFFB0BEC5),
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onLoad,
+                    enabled = !isLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFF9800),
+                        contentColor = Color.Black
+                    )
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                    } else {
+                        Text(
+                            text = if (isVerified) "বিল্ট-ইন M3U লোড করুন" else "পিন ভেরিফাই করে লোড করুন",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomM3uTab(
+    playlists: List<Playlist>,
+    isLoading: Boolean,
+    onLoadCustom: (url: String, name: String) -> Unit,
+    onDelete: (Long) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.padding(8.dp)) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("প্লেলিস্টের নাম (যেমন: My IPTV)") },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFFF9800),
+                unfocusedBorderColor = Color(0xFF3E5751)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("M3U / M3U8 লিঙ্ক (URL)") },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFFF9800),
+                unfocusedBorderColor = Color(0xFF3E5751)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = {
+                if (url.isNotEmpty()) {
+                    onLoadCustom(url, name.ifEmpty { "কাস্টম M3U" })
+                    name = ""
+                    url = ""
+                }
+            },
+            enabled = !isLoading && url.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF00B0FF),
+                contentColor = Color.Black
+            )
+        ) {
+            Text("প্লেলিস্ট যোগ ও লোড করুন", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "সংরক্ষিত কাস্টম প্লেলিস্ট:",
+            color = Color.White,
+            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn {
+            items(playlists) { pl ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B2825)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = pl.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(text = pl.url.ifEmpty { pl.serverUrl ?: "" }, color = Color(0xFF80CBC4), fontSize = 11.sp, maxLines = 1)
+                        }
+                        IconButton(onClick = { onDelete(pl.id) }) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFFF5252))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun XtreamTab(
+    isLoading: Boolean,
+    onConnect: (server: String, user: String, pass: String) -> Unit
+) {
+    var server by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.padding(8.dp)) {
+        OutlinedTextField(
+            value = server,
+            onValueChange = { server = it },
+            label = { Text("Server URL (যেমন: http://server.com:8080)") },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFFF9800),
+                unfocusedBorderColor = Color(0xFF3E5751)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = username,
+            onValueChange = { username = it },
+            label = { Text("Username") },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFFF9800),
+                unfocusedBorderColor = Color(0xFF3E5751)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFFF9800),
+                unfocusedBorderColor = Color(0xFF3E5751)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = {
+                if (server.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty()) {
+                    onConnect(server, username, password)
+                }
+            },
+            enabled = !isLoading && server.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF00E676),
+                contentColor = Color.Black
+            )
+        ) {
+            Text("Xtream সংযোগ করুন", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun GeneralSettingsTab(
+    isBackgroundAudioEnabled: Boolean,
+    onToggleBackgroundAudio: (Boolean) -> Unit,
+    onOpenSleepTimer: () -> Unit
+) {
+    Column(modifier = Modifier.padding(8.dp)) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "মোবাইলে ব্যাকগ্রাউন্ড অডিও (M3U)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "স্ক্রিন বন্ধ থাকলেও M3U স্ট্রিমের অডিও চালু থাকবে।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                }
+                Switch(
+                    checked = isBackgroundAudioEnabled,
+                    onCheckedChange = onToggleBackgroundAudio,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color(0xFFFF9800),
+                        checkedTrackColor = Color(0xFF805B1E)
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "স্লিপ টাইমার", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "নির্দিষ্ট সময় পর অ্যাপ স্বয়ংক্রিয়ভাবে বন্ধ করার সময়সূচি।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                }
+                Button(
+                    onClick = onOpenSleepTimer,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334B44))
+                ) {
+                    Text("সেট করুন", color = Color(0xFFFF9800))
+                }
+            }
+        }
+    }
+}
