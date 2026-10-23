@@ -189,8 +189,8 @@ class ChannelRepository(private val context: Context) {
         Result.failure(result.exceptionOrNull() ?: Exception("No channels returned from server"))
     }
 
-    suspend fun checkServerSync(onUpdating: (String) -> Unit): Result<String> {
-        val checkResult = serverCheckService.performServerCheck(onUpdating)
+    suspend fun checkServerSync(forceUpdate: Boolean = false, onUpdating: (String) -> Unit): Result<String> {
+        val checkResult = serverCheckService.performServerCheck(forceUpdate, onUpdating)
         // Also attempt live channels sync from MySQL
         syncChannelsWithServer()
         return checkResult

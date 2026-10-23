@@ -3,32 +3,45 @@ package com.example.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import androidx.annotation.OptIn
-import androidx.core.app.NotificationCompat
-import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.example.R
 
 @OptIn(UnstableApi::class)
 class MediaPlaybackService : MediaSessionService() {
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
 
-        val newPlayer = ExoPlayer.Builder(this).build()
+        // Power Management: PARTIAL_WAKE_LOCK ensures uninterrupted streaming when screen is off
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NokshiIPTV:PlaybackWakeLock").apply {
+            setReferenceCounted(false)
+        }
+
+        val newPlayer = ExoPlayer.Builder(this).build().apply {
+            setWakeMode(C.WAKE_MODE_NETWORK)
+        }
         player = newPlayer
 
         mediaSession = MediaSession.Builder(this, newPlayer)
             .build()
+
+        try {
+            wakeLock?.acquire(24 * 60 * 60 * 1000L) // Safe 24h cap
+        } catch (e: Exception) {
+            // Graceful fallback
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -36,6 +49,15 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+        wakeLock = null
+
         mediaSession?.run {
             player.release()
             release()

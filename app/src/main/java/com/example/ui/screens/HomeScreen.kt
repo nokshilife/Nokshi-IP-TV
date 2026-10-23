@@ -324,8 +324,8 @@ fun HomeScreen(
                             )
                         }
 
-                        // Refresh / Sync Button
-                        IconButton(onClick = { viewModel.checkServer() }) {
+                        // Refresh / Sync Button (Forces check_youtube_live.php and updates channel data)
+                        IconButton(onClick = { viewModel.checkServer(forceUpdate = true) }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh",
@@ -577,6 +577,7 @@ fun HomeScreen(
                     viewModel.closeSettings()
                     viewModel.openSleepTimerDialog()
                 },
+                onForceServerCheck = { viewModel.checkServer(forceUpdate = true) },
                 onDismiss = { viewModel.closeSettings() }
             )
         }

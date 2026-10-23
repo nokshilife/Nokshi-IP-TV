@@ -27,6 +27,7 @@ class ServerCheckService {
      * Checks server log date and runs YouTube live check if date does not match Bangladesh current date
      */
     suspend fun performServerCheck(
+        forceUpdate: Boolean = false,
         onUpdating: (message: String) -> Unit
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
@@ -52,16 +53,16 @@ class ServerCheckService {
             val serverDateMatch = dateRegex.find(serverLogContent)
             val serverDate = serverDateMatch?.groupValues?.get(1) ?: serverLogContent.take(10)
 
-            if (serverDate == todayBd) {
+            if (!forceUpdate && serverDate == todayBd) {
                 Log.d("ServerCheck", "Dates match ($serverDate). No update needed.")
-                return@withContext Result.success("চ্যানেল তালিকা হালনাগাদ রয়েছে ($serverDate)")
+                return@withContext Result.success("সার্ভার লগ: $serverDate | বাংলাদেশ: $todayBd (চ্যানেল হালনাগাদ রয়েছে)")
             }
 
             withContext(Dispatchers.Main) {
-                onUpdating("চ্যানেল আপডেট হচ্ছে...")
+                onUpdating("চ্যানেল আপডেট হচ্ছে... (সার্ভার: $serverDate, বাংলাদেশ: $todayBd)")
             }
 
-            Log.d("ServerCheck", "Dates mismatch (Server: $serverDate, BD: $todayBd). Calling check script...")
+            Log.d("ServerCheck", "Calling check_youtube_live.php (force=$forceUpdate)...")
 
             val checkRequest = Request.Builder()
                 .url(CHECK_YOUTUBE_LIVE_URL)

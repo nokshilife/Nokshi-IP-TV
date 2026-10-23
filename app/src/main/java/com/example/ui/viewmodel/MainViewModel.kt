@@ -127,6 +127,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedGroup.value = group
     }
 
+    private var isPlaybackStarted = false
+    private var loadingWatchdogJob: Job? = null
+
     fun selectChannel(channel: Channel) {
         if (_currentChannel.value?.id == channel.id && !_isFlashBannerVisible.value) {
             return
@@ -134,17 +137,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         _currentChannel.value = channel
         _isFlashBannerVisible.value = true
+        isPlaybackStarted = false
 
         bannerTimeoutJob?.cancel()
         bannerTimeoutJob = viewModelScope.launch {
-            // Flash banner is displayed during transition (1.8 seconds)
-            // so the user gets the transition flash, and then the video player buffers and plays cleanly
-            delay(1800)
+            // Flash banner displays for 1.5 seconds during transition
+            delay(1500)
             _isFlashBannerVisible.value = false
+        }
+
+        // User requirement:
+        // "যেকো ভিডিও লোড হওয়ার জন্য কমপক্ষে ৫ সেকেন্ড সময় পাবে। এর মধ্যে লোড হতে ব্যর্থ হলে পরবর্তি চ্যানেলে সুইচ করবে। কোন চ্যানেল একবার চালু হবার পর মাঝ পথে আটকে গেলে আর সুইচ করবে না।"
+        loadingWatchdogJob?.cancel()
+        loadingWatchdogJob = viewModelScope.launch {
+            delay(6000) // At least 5 seconds window
+            if (!isPlaybackStarted) {
+                Log.w("MainViewModel", "Channel ${channel.name} failed to load within 6s. Auto-switching to next channel.")
+                _serverSyncState.value = ServerSyncState.Notice("${channel.name} লোড হতে ব্যর্থ, পরবর্তী চ্যানেলে যাওয়া হচ্ছে...")
+                playNextChannel()
+            }
         }
     }
 
     fun onPlaybackStarted() {
+        isPlaybackStarted = true
+        loadingWatchdogJob?.cancel()
         bannerTimeoutJob?.cancel()
         _isFlashBannerVisible.value = false
         consecutiveFailures = 0
@@ -152,12 +169,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onPlaybackError(error: String) {
         Log.e("MainViewModel", "Playback error for current channel: $error")
-        handlePlaybackFailure()
+        // User requirement: "কোন চ্যানেল একবার চালু হবার পর মাঝ পথে আটকে গেলে আর সুইচ করবে না।"
+        if (!isPlaybackStarted) {
+            handlePlaybackFailure()
+        } else {
+            // Channel had started playing before, so do NOT switch channel
+            _serverSyncState.value = ServerSyncState.Notice("ভিডিওটি বাফারিং বা সাময়িক বিলম্বিত হচ্ছে...")
+        }
     }
 
     private fun handlePlaybackFailure() {
         _isFlashBannerVisible.value = false
-        _serverSyncState.value = ServerSyncState.Notice("চ্যানেলটি লোড হতে দেরি হচ্ছে বা স্ট্রিম সাময়িক অফলাইন।")
+        loadingWatchdogJob?.cancel()
+        playNextChannel()
     }
 
     fun playNextChannel() {
@@ -314,18 +338,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _sleepTimerSeconds.value = 0
     }
 
-    fun checkServer() {
+    fun checkServer(forceUpdate: Boolean = false) {
         viewModelScope.launch {
-            _serverSyncState.value = ServerSyncState.Checking()
-            val result = repository.checkServerSync { msg ->
+            _serverSyncState.value = ServerSyncState.Checking("সার্ভার চেক: তারিখ ও লাইভ স্ট্রিম স্থিতি যাচাই করা হচ্ছে...")
+            val result = repository.checkServerSync(forceUpdate) { msg ->
                 _serverSyncState.value = ServerSyncState.Updating(msg)
             }
             if (result.isSuccess) {
                 _serverSyncState.value = ServerSyncState.Success(result.getOrNull() ?: "হালনাগাদ সম্পন্ন")
             } else {
-                _serverSyncState.value = ServerSyncState.Notice("অফলাইন/ক্যাশে ডেটা দিয়ে চলছে")
+                _serverSyncState.value = ServerSyncState.Notice(result.exceptionOrNull()?.message ?: "অফলাইন/ক্যাশে ডেটা দিয়ে চলছে")
             }
-            delay(3000)
+            delay(4000)
             if (_serverSyncState.value !is ServerSyncState.Updating) {
                 _serverSyncState.value = ServerSyncState.Idle
             }

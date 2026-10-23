@@ -69,6 +69,7 @@ fun PlaylistSettingsDialog(
     onDeletePlaylist: (id: Long) -> Unit,
     onToggleBackgroundAudio: (Boolean) -> Unit,
     onOpenSleepTimer: () -> Unit,
+    onForceServerCheck: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -173,7 +174,8 @@ fun PlaylistSettingsDialog(
                         3 -> GeneralSettingsTab(
                             isBackgroundAudioEnabled = isBackgroundAudioEnabled,
                             onToggleBackgroundAudio = onToggleBackgroundAudio,
-                            onOpenSleepTimer = onOpenSleepTimer
+                            onOpenSleepTimer = onOpenSleepTimer,
+                            onForceServerCheck = onForceServerCheck
                         )
                     }
                 }
@@ -404,9 +406,34 @@ private fun XtreamTab(
 private fun GeneralSettingsTab(
     isBackgroundAudioEnabled: Boolean,
     onToggleBackgroundAudio: (Boolean) -> Unit,
-    onOpenSleepTimer: () -> Unit
+    onOpenSleepTimer: () -> Unit,
+    onForceServerCheck: () -> Unit
 ) {
     Column(modifier = Modifier.padding(8.dp)) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "সার্ভার চেক ও চ্যানেল আপডেট", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "সার্ভার তারিখ যাচাই ও check_youtube_live.php চালান।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                }
+                Button(
+                    onClick = onForceServerCheck,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800), contentColor = Color.Black)
+                ) {
+                    Text("রান করুন", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
