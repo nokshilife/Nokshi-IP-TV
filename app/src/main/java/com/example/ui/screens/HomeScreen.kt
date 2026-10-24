@@ -97,6 +97,7 @@ import com.example.data.model.ChannelType
 import com.example.data.model.ServerSyncState
 import com.example.player.ExoPlayerView
 import com.example.player.YouTubePlayerView
+import com.example.service.MediaPlaybackService
 import com.example.ui.components.ExitConfirmationDialog
 import com.example.ui.components.FlashBanner
 import com.example.ui.components.PinVerificationDialog
@@ -118,6 +119,7 @@ private val LeafGreenHeader = Color(0xFFAEEA00)
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
+    onRequestBatteryUnrestricted: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -155,6 +157,8 @@ fun HomeScreen(
     val settingsStatus by viewModel.settingsStatus.collectAsState()
     val settingsLoading by viewModel.settingsLoading.collectAsState()
     val m3uVisibleLimit by viewModel.m3uVisibleLimit.collectAsState()
+    val isBackgroundAudioEnabled by viewModel.isBackgroundAudioEnabled.collectAsState()
+    val isBatteryUnrestricted by viewModel.isBatteryUnrestricted.collectAsState()
 
     val visibleChannels = remember(
         activeTab,
@@ -271,8 +275,8 @@ fun HomeScreen(
                     )
             ) {
                 currentChannel?.let { ch ->
-                    androidx.compose.runtime.key(ch.id, ch.streamUrl) {
-                        if (ch.type == ChannelType.YOUTUBE) {
+                    if (ch.type == ChannelType.YOUTUBE) {
+                        androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                             val videoId = ch.getYouTubeVideoId() ?: ""
                             YouTubePlayerView(
                                 videoId = videoId,
@@ -281,16 +285,18 @@ fun HomeScreen(
                                 onPlaybackError = { err -> viewModel.onPlaybackError(err) },
                                 onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                             )
-                        } else {
-                            ExoPlayerView(
-                                streamUrl = ch.streamUrl,
-                                modifier = Modifier.fillMaxSize(),
-                                onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                onDoubleTap = { viewModel.toggleFullscreen() },
-                                onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
-                            )
                         }
+                    } else {
+                        ExoPlayerView(
+                            streamUrl = ch.streamUrl,
+                            channelName = ch.name,
+                            logoUrl = ch.poster,
+                            modifier = Modifier.fillMaxSize(),
+                            onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                            onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                            onDoubleTap = { viewModel.toggleFullscreen() },
+                            onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
+                        )
                     }
                 }
 
@@ -361,8 +367,8 @@ fun HomeScreen(
                             .background(Color.Black)
                     ) {
                         currentChannel?.let { ch ->
-                            androidx.compose.runtime.key(ch.id, ch.streamUrl) {
-                                if (ch.type == ChannelType.YOUTUBE) {
+                            if (ch.type == ChannelType.YOUTUBE) {
+                                androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                                     val videoId = ch.getYouTubeVideoId() ?: ""
                                     YouTubePlayerView(
                                         videoId = videoId,
@@ -371,16 +377,18 @@ fun HomeScreen(
                                         onPlaybackError = { err -> viewModel.onPlaybackError(err) },
                                         onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
-                                } else {
-                                    ExoPlayerView(
-                                        streamUrl = ch.streamUrl,
-                                        modifier = Modifier.fillMaxSize(),
-                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                        onDoubleTap = { viewModel.toggleFullscreen() },
-                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
-                                    )
                                 }
+                            } else {
+                                ExoPlayerView(
+                                    streamUrl = ch.streamUrl,
+                                    channelName = ch.name,
+                                    logoUrl = ch.poster,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                    onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                    onDoubleTap = { viewModel.toggleFullscreen() },
+                                    onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
+                                )
                             }
                         } ?: run {
                             Box(
@@ -784,8 +792,8 @@ fun HomeScreen(
                             )
                     ) {
                         currentChannel?.let { ch ->
-                            androidx.compose.runtime.key(ch.id, ch.streamUrl) {
-                                if (ch.type == ChannelType.YOUTUBE) {
+                            if (ch.type == ChannelType.YOUTUBE) {
+                                androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                                     val videoId = ch.getYouTubeVideoId() ?: ""
                                     YouTubePlayerView(
                                         videoId = videoId,
@@ -794,16 +802,18 @@ fun HomeScreen(
                                         onPlaybackError = { err -> viewModel.onPlaybackError(err) },
                                         onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
-                                } else {
-                                    ExoPlayerView(
-                                        streamUrl = ch.streamUrl,
-                                        modifier = Modifier.fillMaxSize(),
-                                        onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                        onDoubleTap = { viewModel.toggleFullscreen() },
-                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
-                                    )
                                 }
+                            } else {
+                                ExoPlayerView(
+                                    streamUrl = ch.streamUrl,
+                                    channelName = ch.name,
+                                    logoUrl = ch.poster,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onPlaybackStarted = { viewModel.onPlaybackStarted() },
+                                    onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                    onDoubleTap = { viewModel.toggleFullscreen() },
+                                    onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
+                                )
                             }
                         } ?: run {
                             Box(
@@ -965,7 +975,8 @@ fun HomeScreen(
             PlaylistSettingsDialog(
                 isBuiltInPinVerified = viewModel.repository.preferences.isBuiltInPinVerified,
                 playlists = playlists,
-                isBackgroundAudioEnabled = viewModel.repository.preferences.isBackgroundAudioEnabled,
+                isBackgroundAudioEnabled = isBackgroundAudioEnabled,
+                isBatteryUnrestricted = isBatteryUnrestricted,
                 isLoading = settingsLoading,
                 statusMessage = settingsStatus,
                 onLoadBuiltInM3u = { viewModel.loadBuiltInM3u() },
@@ -973,6 +984,7 @@ fun HomeScreen(
                 onLoadXtream = { server, user, pass -> viewModel.loadXtream(server, user, pass) },
                 onDeletePlaylist = { id -> viewModel.deletePlaylist(id) },
                 onToggleBackgroundAudio = { viewModel.setBackgroundAudio(it) },
+                onRequestBatteryUnrestricted = onRequestBatteryUnrestricted,
                 onOpenSleepTimer = {
                     viewModel.closeSettings()
                     viewModel.openSleepTimerDialog()
@@ -1005,6 +1017,7 @@ fun HomeScreen(
             ExitConfirmationDialog(
                 onConfirmExit = {
                     viewModel.closeExitDialog()
+                    MediaPlaybackService.stopPlayback(context)
                     activity?.finishAffinity()
                 },
                 onDismiss = { viewModel.closeExitDialog() }

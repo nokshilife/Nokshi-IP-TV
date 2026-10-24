@@ -9,6 +9,8 @@ import com.example.data.model.ChannelType
 import com.example.data.model.Playlist
 import com.example.data.model.ServerSyncState
 import com.example.data.repository.ChannelRepository
+import com.example.service.MediaPlaybackService
+import com.example.util.BatteryOptimizationHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -159,6 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _settingsLoading = MutableStateFlow(false)
     val settingsLoading: StateFlow<Boolean> = _settingsLoading.asStateFlow()
 
+    private val _isBackgroundAudioEnabled = MutableStateFlow(repository.preferences.isBackgroundAudioEnabled)
+    val isBackgroundAudioEnabled: StateFlow<Boolean> = _isBackgroundAudioEnabled.asStateFlow()
+
+    private val _isBatteryUnrestricted = MutableStateFlow(
+        BatteryOptimizationHelper.isIgnoringBatteryOptimizations(application)
+    )
+    val isBatteryUnrestricted: StateFlow<Boolean> = _isBatteryUnrestricted.asStateFlow()
+
     private var isPlaybackStarted = false
     private var loadingWatchdogJob: Job? = null
 
@@ -264,7 +274,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        val streamKind = if (channel.type == ChannelType.YOUTUBE) "YouTube IFrame" else "M3U8 HLS"
+        // Stop Foreground M3U MediaPlaybackService when switching to a YouTube channel
+        if (channel.type == ChannelType.YOUTUBE) {
+            MediaPlaybackService.stopPlayback(getApplication())
+        }
+
+        val streamKind = if (channel.type == ChannelType.YOUTUBE) "YouTube IFrame" else "M3U8 HLS (FgService)"
         appendBackendLog(
             "[ChannelSelect] ${channel.name} (ID:#${channel.id}, Order:${channel.displayOrder}, Engine:$streamKind)",
             BackendLogLevel.WORKING,
@@ -499,10 +514,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setBackgroundAudio(enabled: Boolean) {
         repository.preferences.isBackgroundAudioEnabled = enabled
+        _isBackgroundAudioEnabled.value = enabled
         appendBackendLog(
-            if (enabled) "[PowerManager] ব্যাকগ্রাউন্ড অডিও ওয়েক-লক চালু" else "[PowerManager] ব্যাকগ্রাউন্ড অডিও বন্ধ",
+            if (enabled) {
+                "[PowerManager] মোবাইলে ব্যাকগ্রাউন্ড/স্ক্রিন-অফ M3U প্লেব্যাক চালু"
+            } else {
+                "[PowerManager] ব্যাকগ্রাউন্ড M3U প্লেব্যাক বন্ধ করা হয়েছে"
+            },
             BackendLogLevel.INFO
         )
+    }
+
+    fun refreshBatteryOptimizationState(logResult: Boolean = false): Boolean {
+        val unrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(getApplication())
+        _isBatteryUnrestricted.value = unrestricted
+        if (logResult) {
+            if (unrestricted) {
+                appendBackendLog(
+                    "[PowerManager] ব্যাটারি অপ্টিমাইজেশন মুক্ত (Unrestricted) সক্রিয় — ব্যাকগ্রাউন্ড প্লেব্যাক সুরক্ষিত",
+                    BackendLogLevel.SUCCESS
+                )
+            } else {
+                appendBackendLog(
+                    "[PowerManager] ব্যাটারি অপ্টিমাইজেশন এখনো চালু আছে (Unrestricted করা সুপারিশকৃত)",
+                    BackendLogLevel.WARNING
+                )
+            }
+        }
+        return unrestricted
     }
 
     // Sleep Timer

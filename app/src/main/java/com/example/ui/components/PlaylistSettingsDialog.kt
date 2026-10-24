@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -52,6 +54,7 @@ fun PlaylistSettingsDialog(
     isBuiltInPinVerified: Boolean,
     playlists: List<Playlist>,
     isBackgroundAudioEnabled: Boolean,
+    isBatteryUnrestricted: Boolean = false,
     isLoading: Boolean,
     statusMessage: String?,
     onLoadBuiltInM3u: () -> Unit,
@@ -59,6 +62,7 @@ fun PlaylistSettingsDialog(
     onLoadXtream: (server: String, user: String, pass: String) -> Unit,
     onDeletePlaylist: (id: Long) -> Unit,
     onToggleBackgroundAudio: (Boolean) -> Unit,
+    onRequestBatteryUnrestricted: () -> Unit = {},
     onOpenSleepTimer: () -> Unit,
     onForceServerCheck: () -> Unit = {},
     onDismiss: () -> Unit
@@ -159,7 +163,9 @@ fun PlaylistSettingsDialog(
                         )
                         3 -> GeneralSettingsTab(
                             isBackgroundAudioEnabled = isBackgroundAudioEnabled,
+                            isBatteryUnrestricted = isBatteryUnrestricted,
                             onToggleBackgroundAudio = onToggleBackgroundAudio,
+                            onRequestBatteryUnrestricted = onRequestBatteryUnrestricted,
                             onOpenSleepTimer = onOpenSleepTimer,
                             onForceServerCheck = onForceServerCheck
                         )
@@ -379,11 +385,17 @@ private fun XtreamTab(
 @Composable
 private fun GeneralSettingsTab(
     isBackgroundAudioEnabled: Boolean,
+    isBatteryUnrestricted: Boolean,
     onToggleBackgroundAudio: (Boolean) -> Unit,
+    onRequestBatteryUnrestricted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onForceServerCheck: () -> Unit
 ) {
-    Column(modifier = Modifier.padding(8.dp)) {
+    Column(
+        modifier = Modifier
+            .verticalScroll(rememberScrollState())
+            .padding(8.dp)
+    ) {
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
@@ -394,11 +406,25 @@ private fun GeneralSettingsTab(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "সার্ভার চেক ও চ্যানেল আপডেট", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "সার্ভার তারিখ যাচাই ও check_youtube_live.php চালান।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                    Text(
+                        text = "ব্যাটারি অপ্টিমাইজেশন (Unrestricted)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = if (isBatteryUnrestricted) {
+                            "স্ট্যাটাস: Unrestricted সক্রিয় (ব্যাকগ্রাউন্ড প্লেব্যাক সুরক্ষিত)"
+                        } else {
+                            "স্ট্যাটাস: অপ্টিমাইজড (ব্যাকগ্রাউন্ডে বন্ধ হওয়া রোধে Unrestricted করুন)"
+                        },
+                        color = if (isBatteryUnrestricted) Color(0xFF76FF03) else Color(0xFF80CBC4),
+                        fontSize = 12.sp
+                    )
                 }
-                TvNeutralButton(onClick = onForceServerCheck) {
-                    Text("রান করুন")
+                Spacer(modifier = Modifier.width(8.dp))
+                TvNeutralButton(onClick = onRequestBatteryUnrestricted) {
+                    Text(if (isBatteryUnrestricted) "যাচাই করুন" else "Unrestricted করুন")
                 }
             }
         }
@@ -415,8 +441,8 @@ private fun GeneralSettingsTab(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "মোবাইলে ব্যাকগ্রাউন্ড অডিও (M3U)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "স্ক্রিন বন্ধ থাকলেও M3U স্ট্রিমের অডিও চালু থাকবে।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                    Text(text = "মোবাইলে ব্যাকগ্রাউন্ড প্লেব্যাক (M3U)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "স্ক্রিন বন্ধ বা অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও M3U স্ট্রিম সচল থাকবে।", color = Color(0xFF80CBC4), fontSize = 12.sp)
                 }
                 Switch(
                     checked = isBackgroundAudioEnabled,
@@ -426,6 +452,27 @@ private fun GeneralSettingsTab(
                         checkedTrackColor = Color(0xFF3E5E55)
                     )
                 )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2E2A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "সার্ভার চেক ও চ্যানেল আপডেট", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "সার্ভার তারিখ যাচাই ও check_youtube_live.php চালান।", color = Color(0xFF80CBC4), fontSize = 12.sp)
+                }
+                TvNeutralButton(onClick = onForceServerCheck) {
+                    Text("রান করুন")
+                }
             }
         }
 
