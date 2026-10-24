@@ -4,26 +4,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +46,7 @@ fun SleepTimerDialog(
             Icon(
                 imageVector = Icons.Default.Bedtime,
                 contentDescription = "Sleep Timer",
-                tint = Color(0xFFFFB300)
+                tint = Color(0xFFB8CFC9)
             )
         },
         title = {
@@ -77,7 +68,7 @@ fun SleepTimerDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "অ্যাপ বন্ধ হতে বাকি: $formattedRemaining",
-                        color = Color(0xFFFF9800),
+                        color = Color(0xFF76FF03),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -105,15 +96,12 @@ fun SleepTimerDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     presets.forEach { min ->
-                        FilledTonalButton(
+                        TvNeutralButton(
                             onClick = {
                                 onSetTimer(min)
                                 onDismiss()
                             },
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color(0xFF263733),
-                                contentColor = Color(0xFFE0F2F1)
-                            )
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
                         ) {
                             Text("$min মিনিট")
                         }
@@ -123,20 +111,19 @@ fun SleepTimerDialog(
         },
         confirmButton = {
             if (isActive) {
-                Button(
+                TvNeutralButton(
                     onClick = {
                         onCancelTimer()
                         onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                    }
                 ) {
                     Text("টাইমার বাতিল করুন")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("বন্ধ করুন", color = Color(0xFF80CBC4))
+            TvNeutralButton(onClick = onDismiss) {
+                Text("বন্ধ করুন")
             }
         }
     )

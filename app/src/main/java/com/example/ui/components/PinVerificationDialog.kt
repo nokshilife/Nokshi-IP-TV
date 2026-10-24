@@ -10,20 +10,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +45,7 @@ fun PinVerificationDialog(
             Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = "PIN Lock",
-                tint = Color(0xFFFF9800),
+                tint = Color(0xFFB8CFC9),
                 modifier = Modifier.size(32.dp)
             )
         },
@@ -95,7 +91,7 @@ fun PinVerificationDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = errorMessage,
-                        color = Color(0xFFFF5252),
+                        color = Color(0xFFFF8A80),
                         fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
@@ -103,29 +99,25 @@ fun PinVerificationDialog(
             }
         },
         confirmButton = {
-            Button(
+            TvNeutralButton(
                 onClick = { onVerify(pinText) },
-                enabled = !isLoading && pinText.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF9800),
-                    contentColor = Color.Black
-                )
+                enabled = !isLoading && pinText.isNotEmpty()
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
-                        color = Color.Black,
+                        color = Color.White,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(18.dp)
                     )
                 } else {
-                    Text("যাচাই করুন", fontWeight = FontWeight.Bold)
+                    Text("যাচাই করুন")
                 }
             }
         },
         dismissButton = {
             if (!isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text("বাতিল", color = Color(0xFF80CBC4))
+                TvNeutralButton(onClick = onDismiss) {
+                    Text("বাতিল")
                 }
             }
         }

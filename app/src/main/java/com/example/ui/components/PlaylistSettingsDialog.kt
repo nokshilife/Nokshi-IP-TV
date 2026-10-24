@@ -1,9 +1,9 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -16,29 +16,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -95,7 +86,7 @@ fun PlaylistSettingsDialog(
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Settings",
-                        tint = Color(0xFFFF9800),
+                        tint = Color(0xFFB8CFC9),
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -106,39 +97,34 @@ fun PlaylistSettingsDialog(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) {
-                        Text("বন্ধ করুন", color = Color(0xFF80CBC4))
+                    TvNeutralButton(
+                        onClick = onDismiss,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text("বন্ধ করুন")
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Tabs
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color(0xFF1A2623),
-                    contentColor = Color(0xFFFF9800),
-                    edgePadding = 0.dp,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = Color(0xFFFF9800)
-                        )
-                    }
+                // Tabs (Neutral when unfocused; subtle active indicator; amber ONLY when D-pad focused)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
+                        val isActive = selectedTab == index
+                        TvNeutralButton(
                             onClick = { selectedTab = index },
-                            text = {
-                                Text(
-                                    text = title,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedTab == index) Color(0xFFFF9800) else Color(0xFFB0BEC5)
-                                )
-                            }
-                        )
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = if (isActive) "• $title" else title,
+                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
 
@@ -147,7 +133,7 @@ fun PlaylistSettingsDialog(
                 if (!statusMessage.isNullOrEmpty()) {
                     Text(
                         text = statusMessage,
-                        color = if (statusMessage.contains("সফল")) Color(0xFF00E676) else Color(0xFFFF9800),
+                        color = Color(0xFF76FF03),
                         fontSize = 13.sp,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -201,7 +187,7 @@ private fun BuiltInTab(
                     Icon(
                         imageVector = if (isVerified) Icons.Default.CheckCircle else Icons.Default.Lock,
                         contentDescription = null,
-                        tint = if (isVerified) Color(0xFF00E676) else Color(0xFFFF9800)
+                        tint = if (isVerified) Color(0xFF76FF03) else Color(0xFFB8CFC9)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -219,21 +205,14 @@ private fun BuiltInTab(
                     lineHeight = 18.sp
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(
+                TvNeutralButton(
                     onClick = onLoad,
-                    enabled = !isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFF9800),
-                        contentColor = Color.Black
-                    )
+                    enabled = !isLoading
                 ) {
                     if (isLoading) {
-                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                     } else {
-                        Text(
-                            text = if (isVerified) "বিল্ট-ইন M3U লোড করুন" else "পিন ভেরিফাই করে লোড করুন",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(text = if (isVerified) "বিল্ট-ইন M3U লোড করুন" else "পিন ভেরিফাই করে লোড করুন")
                     }
                 }
             }
@@ -280,7 +259,7 @@ private fun CustomM3uTab(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Button(
+        TvNeutralButton(
             onClick = {
                 if (url.isNotEmpty()) {
                     onLoadCustom(url, name.ifEmpty { "কাস্টম M3U" })
@@ -288,13 +267,9 @@ private fun CustomM3uTab(
                     url = ""
                 }
             },
-            enabled = !isLoading && url.isNotEmpty(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF00B0FF),
-                contentColor = Color.Black
-            )
+            enabled = !isLoading && url.isNotEmpty()
         ) {
-            Text("প্লেলিস্ট যোগ ও লোড করুন", fontWeight = FontWeight.Bold)
+            Text("প্লেলিস্ট যোগ ও লোড করুন")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -322,8 +297,11 @@ private fun CustomM3uTab(
                             Text(text = pl.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(text = pl.url.ifEmpty { pl.serverUrl ?: "" }, color = Color(0xFF80CBC4), fontSize = 11.sp, maxLines = 1)
                         }
-                        IconButton(onClick = { onDelete(pl.id) }) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFFF5252))
+                        TvNeutralButton(
+                            onClick = { onDelete(pl.id) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -385,19 +363,15 @@ private fun XtreamTab(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Button(
+        TvNeutralButton(
             onClick = {
                 if (server.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty()) {
                     onConnect(server, username, password)
                 }
             },
-            enabled = !isLoading && server.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF00E676),
-                contentColor = Color.Black
-            )
+            enabled = !isLoading && server.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty()
         ) {
-            Text("Xtream সংযোগ করুন", fontWeight = FontWeight.Bold)
+            Text("Xtream সংযোগ করুন")
         }
     }
 }
@@ -423,11 +397,8 @@ private fun GeneralSettingsTab(
                     Text(text = "সার্ভার চেক ও চ্যানেল আপডেট", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "সার্ভার তারিখ যাচাই ও check_youtube_live.php চালান।", color = Color(0xFF80CBC4), fontSize = 12.sp)
                 }
-                Button(
-                    onClick = onForceServerCheck,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800), contentColor = Color.Black)
-                ) {
-                    Text("রান করুন", fontWeight = FontWeight.Bold)
+                TvNeutralButton(onClick = onForceServerCheck) {
+                    Text("রান করুন")
                 }
             }
         }
@@ -451,8 +422,8 @@ private fun GeneralSettingsTab(
                     checked = isBackgroundAudioEnabled,
                     onCheckedChange = onToggleBackgroundAudio,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFFFF9800),
-                        checkedTrackColor = Color(0xFF805B1E)
+                        checkedThumbColor = Color(0xFFE4F0EC),
+                        checkedTrackColor = Color(0xFF3E5E55)
                     )
                 )
             }
@@ -473,11 +444,8 @@ private fun GeneralSettingsTab(
                     Text(text = "স্লিপ টাইমার", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "নির্দিষ্ট সময় পর অ্যাপ স্বয়ংক্রিয়ভাবে বন্ধ করার সময়সূচি।", color = Color(0xFF80CBC4), fontSize = 12.sp)
                 }
-                Button(
-                    onClick = onOpenSleepTimer,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334B44))
-                ) {
-                    Text("সেট করুন", color = Color(0xFFFF9800))
+                TvNeutralButton(onClick = onOpenSleepTimer) {
+                    Text("সেট করুন")
                 }
             }
         }

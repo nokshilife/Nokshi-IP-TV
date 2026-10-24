@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,6 +109,12 @@ import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// Vibrant Bright Leaf-Green / Banana-Leaf Palette for Backend Process Status Box
+private val LeafGreenBright = Color(0xFF76FF03)
+private val LeafGreenPrimary = Color(0xFF84FF33)
+private val LeafGreenTime = Color(0xFF5EEB1C)
+private val LeafGreenHeader = Color(0xFFAEEA00)
+
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
@@ -185,6 +192,7 @@ fun HomeScreen(
             delay(180)
             try {
                 fullScreenFocusRequester.requestFocus()
+                viewModel.logPlayerProcessStep("[FocusManager] রিমোট ফোকাস 'ফুল স্ক্রিন' বাটনে সেট করা হয়েছে")
             } catch (e: Exception) {}
         }
     }
@@ -270,7 +278,8 @@ fun HomeScreen(
                                 videoId = videoId,
                                 modifier = Modifier.fillMaxSize(),
                                 onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                                onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                             )
                         } else {
                             ExoPlayerView(
@@ -278,7 +287,8 @@ fun HomeScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 onPlaybackStarted = { viewModel.onPlaybackStarted() },
                                 onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                onDoubleTap = { viewModel.toggleFullscreen() }
+                                onDoubleTap = { viewModel.toggleFullscreen() },
+                                onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                             )
                         }
                     }
@@ -319,7 +329,7 @@ fun HomeScreen(
                         .fillMaxHeight()
                         .padding(12.dp)
                 ) {
-                    // Clean Header: App Logo + Title ONLY (Crossed-out "Android TV Live" & "YT LIVE" removed)
+                    // Clean Header: App Logo + Title ONLY
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -358,7 +368,8 @@ fun HomeScreen(
                                         videoId = videoId,
                                         modifier = Modifier.fillMaxSize(),
                                         onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
                                 } else {
                                     ExoPlayerView(
@@ -366,7 +377,8 @@ fun HomeScreen(
                                         modifier = Modifier.fillMaxSize(),
                                         onPlaybackStarted = { viewModel.onPlaybackStarted() },
                                         onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                        onDoubleTap = { viewModel.toggleFullscreen() }
+                                        onDoubleTap = { viewModel.toggleFullscreen() },
+                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
                                 }
                             }
@@ -392,7 +404,7 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Channel Name ONLY (Crossed-out "YouTube Live" subtitle removed)
+                    // Channel Name ONLY
                     Text(
                         text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
                         color = Color.White,
@@ -405,8 +417,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // TV Action Buttons Row:
-                    // Left: [ফেভারিট] [সেটিংস] [স্লিপ] ---- Spacer ---- Far Right: [ফুল স্ক্রিন]
-                    // ("রিফ্রেশ" button removed as requested; Right D-pad on "ফুল স্ক্রিন" jumps to next channel card!)
+                    // All buttons stay calm & neutral when unfocused — ONLY the focused button lights up!
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -417,28 +428,25 @@ fun HomeScreen(
                             TvActionButton(
                                 onClick = { viewModel.toggleFavorite(ch) },
                                 icon = if (ch.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                tint = if (ch.isFavorite) Color(0xFFFFD600) else Color.White,
                                 contentDescription = "Favorite",
-                                label = if (ch.isFavorite) "পছন্দ" else "ফেভারিট",
+                                label = if (ch.isFavorite) "পছন্দ ★" else "ফেভারিট",
                                 modifier = Modifier.testTag("tv_favorite_button")
                             )
                         }
 
-                        // Settings Button
+                        // Settings Button (Neutral when unfocused)
                         TvActionButton(
                             onClick = { viewModel.openSettings() },
                             icon = Icons.Default.Settings,
-                            tint = Color(0xFFFF9800),
                             contentDescription = "সেটিংস",
                             label = "সেটিংস",
                             modifier = Modifier.testTag("tv_settings_button")
                         )
 
-                        // Sleep Timer Button
+                        // Sleep Timer Button (Neutral when unfocused)
                         TvActionButton(
                             onClick = { viewModel.openSleepTimerDialog() },
                             icon = Icons.Default.Bedtime,
-                            tint = if (sleepTimerSeconds > 0) Color(0xFFFFB300) else Color(0xFFB0BEC5),
                             contentDescription = "স্লিপ",
                             label = if (sleepTimerSeconds > 0) "${sleepTimerSeconds / 60}m" else "স্লিপ",
                             modifier = Modifier.testTag("tv_sleep_button")
@@ -446,8 +454,7 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Far-Right Prominent Full Screen Button:
-                        // Pressing Right D-pad jumps directly to the thumbnail card AFTER the currently playing channel!
+                        // Far-Right Prominent Full Screen Button (Neutral when unfocused; Amber when focused)
                         FullScreenButton(
                             onClick = { viewModel.setFullscreen(true) },
                             focusRequester = fullScreenFocusRequester,
@@ -464,6 +471,7 @@ fun HomeScreen(
                                         }
                                         try {
                                             channelFocusRequesters[targetChannel.id]?.requestFocus()
+                                            viewModel.logPlayerProcessStep("[FocusJump] ফোকাস স্থানান্তর: ${targetChannel.name}")
                                         } catch (e: Exception) {}
                                     }
                                     true
@@ -477,7 +485,7 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Backend Process Monitor Panel (Fills empty space below TV controls)
+                    // Backend Process Monitor Panel (Bright Banana-Leaf Green Console!)
                     TvBackendProcessPanel(
                         activeStatus = activeBackendStatus,
                         isBusy = isBackendBusy,
@@ -497,7 +505,7 @@ fun HomeScreen(
                         .background(Color(0xFF141E1C))
                         .padding(horizontal = 8.dp, vertical = 8.dp)
                 ) {
-                    // TV Navigation Tabs
+                    // TV Navigation Tabs (Calm neutral when unfocused — no false red/green/yellow!)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -508,7 +516,6 @@ fun HomeScreen(
                             title = "YouTube লাইভ",
                             isSelected = activeTab == "YOUTUBE",
                             icon = Icons.Default.Videocam,
-                            accentColor = Color(0xFFFF5252),
                             onClick = { viewModel.setActiveTab("YOUTUBE") },
                             modifier = Modifier
                                 .weight(1f)
@@ -518,7 +525,6 @@ fun HomeScreen(
                             title = "M3U প্লেলিস্ট",
                             isSelected = activeTab == "M3U",
                             icon = Icons.Default.Tv,
-                            accentColor = Color(0xFF00E676),
                             onClick = { viewModel.setActiveTab("M3U") },
                             modifier = Modifier
                                 .weight(1f)
@@ -528,7 +534,6 @@ fun HomeScreen(
                             title = "প্রিয় চ্যানেল",
                             isSelected = activeTab == "FAVORITES",
                             icon = Icons.Default.Star,
-                            accentColor = Color(0xFFFFD600),
                             onClick = { viewModel.setActiveTab("FAVORITES") },
                             modifier = Modifier
                                 .weight(1f)
@@ -536,7 +541,7 @@ fun HomeScreen(
                         )
                     }
 
-                    // Category Filter Chips (Only needed when multiple categories exist, e.g., M3U groups)
+                    // Category Filter Chips
                     if (activeTab != "YOUTUBE" && availableGroups.size > 2) {
                         LazyRow(
                             contentPadding = PaddingValues(vertical = 4.dp),
@@ -624,9 +629,9 @@ fun HomeScreen(
                             icon = { Icon(Icons.Default.Videocam, contentDescription = "YouTube") },
                             label = { Text("YouTube লাইভ", fontSize = 12.sp) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFFFF5252),
-                                selectedTextColor = Color(0xFFFF5252),
-                                indicatorColor = Color(0xFF2A1F1F),
+                                selectedIconColor = Color.White,
+                                selectedTextColor = Color.White,
+                                indicatorColor = Color(0xFF283C37),
                                 unselectedIconColor = Color(0xFF88A29B),
                                 unselectedTextColor = Color(0xFF88A29B)
                             )
@@ -637,9 +642,9 @@ fun HomeScreen(
                             icon = { Icon(Icons.Default.Tv, contentDescription = "M3U") },
                             label = { Text("M3U প্লেলিস্ট", fontSize = 12.sp) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00E676),
-                                selectedTextColor = Color(0xFF00E676),
-                                indicatorColor = Color(0xFF1B2E26),
+                                selectedIconColor = Color.White,
+                                selectedTextColor = Color.White,
+                                indicatorColor = Color(0xFF283C37),
                                 unselectedIconColor = Color(0xFF88A29B),
                                 unselectedTextColor = Color(0xFF88A29B)
                             )
@@ -650,9 +655,9 @@ fun HomeScreen(
                             icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
                             label = { Text("প্রিয় চ্যানেল", fontSize = 12.sp) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFFFFD600),
-                                selectedTextColor = Color(0xFFFFD600),
-                                indicatorColor = Color(0xFF332D19),
+                                selectedIconColor = Color.White,
+                                selectedTextColor = Color.White,
+                                indicatorColor = Color(0xFF283C37),
                                 unselectedIconColor = Color(0xFF88A29B),
                                 unselectedTextColor = Color(0xFF88A29B)
                             )
@@ -701,7 +706,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Bedtime,
                                 contentDescription = "Sleep Timer",
-                                tint = if (sleepTimerSeconds > 0) Color(0xFFFFB300) else Color(0xFFB0BEC5)
+                                tint = if (sleepTimerSeconds > 0) LeafGreenBright else Color(0xFFB8CFC9)
                             )
                         }
 
@@ -709,7 +714,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh",
-                                tint = Color(0xFF80CBC4)
+                                tint = Color(0xFFB8CFC9)
                             )
                         }
 
@@ -717,7 +722,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
-                                tint = Color(0xFFFF9800)
+                                tint = Color(0xFFB8CFC9)
                             )
                         }
                     }
@@ -725,11 +730,7 @@ fun HomeScreen(
                     // Server sync status notice
                     AnimatedVisibility(visible = serverSyncState !is ServerSyncState.Idle) {
                         Surface(
-                            color = when (serverSyncState) {
-                                is ServerSyncState.Updating -> Color(0xFFE65100)
-                                is ServerSyncState.Success -> Color(0xFF1B5E20)
-                                else -> Color(0xFF263238)
-                            },
+                            color = Color(0xFF132219),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -738,7 +739,7 @@ fun HomeScreen(
                             ) {
                                 if (serverSyncState is ServerSyncState.Updating || serverSyncState is ServerSyncState.Checking) {
                                     CircularProgressIndicator(
-                                        color = Color.White,
+                                        color = LeafGreenBright,
                                         strokeWidth = 2.dp,
                                         modifier = Modifier.size(14.dp)
                                     )
@@ -753,7 +754,7 @@ fun HomeScreen(
                                 }
                                 Text(
                                     text = text,
-                                    color = Color.White,
+                                    color = LeafGreenBright,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -790,7 +791,8 @@ fun HomeScreen(
                                         videoId = videoId,
                                         modifier = Modifier.fillMaxSize(),
                                         onPlaybackStarted = { viewModel.onPlaybackStarted() },
-                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) }
+                                        onPlaybackError = { err -> viewModel.onPlaybackError(err) },
+                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
                                 } else {
                                     ExoPlayerView(
@@ -798,7 +800,8 @@ fun HomeScreen(
                                         modifier = Modifier.fillMaxSize(),
                                         onPlaybackStarted = { viewModel.onPlaybackStarted() },
                                         onPlaybackError = { err -> viewModel.onPlaybackError(err) },
-                                        onDoubleTap = { viewModel.toggleFullscreen() }
+                                        onDoubleTap = { viewModel.toggleFullscreen() },
+                                        onProcessLog = { msg -> viewModel.logPlayerProcessStep(msg) }
                                     )
                                 }
                             }
@@ -857,7 +860,7 @@ fun HomeScreen(
                                         Icon(
                                             imageVector = if (ch.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                             contentDescription = "Favorite",
-                                            tint = if (ch.isFavorite) Color(0xFFFFD600) else Color(0xFF88A29B),
+                                            tint = if (ch.isFavorite) Color(0xFFFFD600) else Color(0xFFB8CFC9),
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
@@ -947,7 +950,7 @@ fun HomeScreen(
             }
         }
 
-        // Full-Screen App Startup Splash Image Overlay (Eliminates blank startup screen)
+        // Full-Screen App Startup Splash Image Overlay
         AnimatedVisibility(
             visible = isAppStartupSplashVisible,
             enter = fadeIn(),
@@ -1047,7 +1050,7 @@ private fun StartupSplashOverlay(
                 .padding(bottom = 36.dp, start = 24.dp, end = 24.dp)
         ) {
             CircularProgressIndicator(
-                color = Color(0xFFFF9800),
+                color = LeafGreenBright,
                 strokeWidth = 3.dp,
                 modifier = Modifier.size(32.dp)
             )
@@ -1061,7 +1064,7 @@ private fun StartupSplashOverlay(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = statusMessage,
-                color = Color(0xFFFFCC80),
+                color = LeafGreenBright,
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1070,6 +1073,10 @@ private fun StartupSplashOverlay(
     }
 }
 
+/**
+ * Backend Process Status Box — styled in vibrant banana-leaf / bright green (#76FF03)
+ * and displaying every real programming-level stage during channel switching & playback.
+ */
 @Composable
 private fun TvBackendProcessPanel(
     activeStatus: String,
@@ -1080,16 +1087,16 @@ private fun TvBackendProcessPanel(
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF131D1A),
-        border = BorderStroke(1.dp, Color(0xFF233631)),
+        color = Color(0xFF09120B),
+        border = BorderStroke(1.dp, Color(0xFF285429)),
         modifier = modifier.testTag("tv_backend_process_panel")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
-            // Header bar with live activity indicator
+            // Header bar in bright banana-leaf green
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -1097,13 +1104,13 @@ private fun TvBackendProcessPanel(
                 Icon(
                     imageVector = Icons.Default.Terminal,
                     contentDescription = null,
-                    tint = Color(0xFF80CBC4),
+                    tint = LeafGreenBright,
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "ব্যাকএন্ড প্রসেস স্ট্যাটাস",
-                    color = Color(0xFF80CBC4),
+                    color = LeafGreenHeader,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1111,7 +1118,7 @@ private fun TvBackendProcessPanel(
                 if (sleepTimerSeconds > 0) {
                     Text(
                         text = "স্লিপ: ${sleepTimerSeconds / 60}m ${sleepTimerSeconds % 60}s",
-                        color = Color(0xFFFFCC80),
+                        color = LeafGreenBright,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(end = 8.dp)
@@ -1119,7 +1126,7 @@ private fun TvBackendProcessPanel(
                 }
                 if (isBusy) {
                     CircularProgressIndicator(
-                        color = Color(0xFFFF9800),
+                        color = LeafGreenBright,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(12.dp)
                     )
@@ -1128,48 +1135,49 @@ private fun TvBackendProcessPanel(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF00E676))
+                            .background(LeafGreenBright)
                     )
                 }
                 Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                    text = if (isBusy) "প্রসেসিং..." else "সচল",
-                    color = if (isBusy) Color(0xFFFFB74D) else Color(0xFF00E676),
+                    text = if (isBusy) "রানিং..." else "সচল",
+                    color = LeafGreenBright,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
-            // Highlighted current backend action
+            // Current active programming step
             Text(
-                text = activeStatus,
-                color = Color.White,
+                text = "> $activeStatus",
+                color = LeafGreenBright,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
             HorizontalDivider(
-                color = Color(0xFF20312C),
+                color = Color(0xFF1D3E1E),
                 thickness = 1.dp,
-                modifier = Modifier.padding(vertical = 5.dp)
+                modifier = Modifier.padding(vertical = 4.dp)
             )
 
-            // Recent live backend process logs (non-focusable so TV D-pad stays on controls/cards)
+            // Step-by-step live programming trace in bright leaf green
             LazyColumn(
                 userScrollEnabled = false,
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(logs.take(6), key = { it.id }) { item ->
-                    val dotColor = when (item.level) {
-                        BackendLogLevel.SUCCESS -> Color(0xFF00E676)
-                        BackendLogLevel.WORKING -> Color(0xFFFFB300)
-                        BackendLogLevel.WARNING -> Color(0xFFFF7043)
-                        BackendLogLevel.INFO -> Color(0xFF80CBC4)
+                items(logs.take(12), key = { it.id }) { item ->
+                    val prefixSymbol = when (item.level) {
+                        BackendLogLevel.SUCCESS -> "✓"
+                        BackendLogLevel.WORKING -> "⟳"
+                        BackendLogLevel.WARNING -> "!"
+                        BackendLogLevel.INFO -> "›"
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1177,22 +1185,24 @@ private fun TvBackendProcessPanel(
                     ) {
                         Text(
                             text = item.time,
-                            color = Color(0xFF68867E),
-                            fontSize = 10.sp,
+                            color = LeafGreenTime,
+                            fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(dotColor)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = prefixSymbol,
+                            color = LeafGreenHeader,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = item.message,
-                            color = Color(0xFFB8CFC9),
+                            color = LeafGreenPrimary,
                             fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -1213,18 +1223,21 @@ private fun FullScreenButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHighlighted = isFocused || isPressed
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.08f else 1.0f,
+        targetValue = if (isHighlighted) 1.07f else 1.0f,
         label = "fs_btn_scale"
     )
 
+    // Neutral dark slate when unfocused; highlighted ONLY when focused/pressed
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = if (isFocused) Color(0xFFFF9800) else Color(0xFF263238),
+        color = if (isHighlighted) Color(0xFFFF9800) else Color(0xFF1E2D29),
         border = BorderStroke(
-            width = if (isFocused) 2.5.dp else 1.dp,
-            color = if (isFocused) Color(0xFFFFD54F) else Color(0xFF455A64)
+            width = if (isHighlighted) 2.5.dp else 1.dp,
+            color = if (isHighlighted) Color(0xFFFFE082) else Color(0xFF3E544E)
         ),
         modifier = modifier
             .scale(scale)
@@ -1251,15 +1264,15 @@ private fun FullScreenButton(
             Icon(
                 imageVector = Icons.Default.Fullscreen,
                 contentDescription = "Full Screen",
-                tint = if (isFocused) Color.Black else Color(0xFFFFD54F),
-                modifier = Modifier.size(20.dp)
+                tint = if (isHighlighted) Color.Black else Color(0xFFE4F0EC),
+                modifier = Modifier.size(19.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "ফুল স্ক্রিন",
-                color = if (isFocused) Color.Black else Color.White,
+                color = if (isHighlighted) Color.Black else Color(0xFFE4F0EC),
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Medium
             )
         }
     }
@@ -1274,31 +1287,33 @@ private fun TvGroupChip(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHighlighted = isFocused || isPressed
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.08f else 1.0f,
+        targetValue = if (isHighlighted) 1.07f else 1.0f,
         label = "group_chip_scale"
     )
 
+    // Calm neutral when unfocused; amber/brown border ONLY when focused!
     val borderColor = when {
-        isFocused -> Color(0xFFFF9800)
-        isSelected -> Color(0xFFFFB300)
-        else -> Color(0x33FFFFFF)
+        isHighlighted -> Color(0xFFFF9800)
+        isSelected -> Color(0xFF5D8A7E)
+        else -> Color(0x2EFFFFFF)
     }
 
-    val borderWidth = if (isFocused) 2.5.dp else if (isSelected) 1.5.dp else 1.dp
+    val borderWidth = if (isHighlighted) 2.5.dp else if (isSelected) 1.5.dp else 1.dp
 
     val containerColor = when {
-        isFocused && isSelected -> Color(0xFFFF9800)
-        isFocused -> Color(0xFF2D2319)
-        isSelected -> Color(0xFFFF9800)
-        else -> Color(0xFF1B2825)
+        isHighlighted -> Color(0xFFFF9800)
+        isSelected -> Color(0xFF243833)
+        else -> Color(0xFF182220)
     }
 
     val textColor = when {
-        isSelected -> Color.Black
-        isFocused -> Color(0xFFFFD54F)
-        else -> Color(0xFFE0F2F1)
+        isHighlighted -> Color.Black
+        isSelected -> Color.White
+        else -> Color(0xFFC5D8D3)
     }
 
     Surface(
@@ -1316,7 +1331,7 @@ private fun TvGroupChip(
             text = text,
             color = textColor,
             fontSize = 11.sp,
-            fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
+            fontWeight = if (isSelected || isHighlighted) FontWeight.Bold else FontWeight.Normal,
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
         )
     }
@@ -1326,25 +1341,26 @@ private fun TvGroupChip(
 private fun TvActionButton(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
     contentDescription: String,
     label: String,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHighlighted = isFocused || isPressed
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.08f else 1.0f,
+        targetValue = if (isHighlighted) 1.07f else 1.0f,
         label = "act_btn_scale"
     )
 
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = if (isFocused) Color(0xFFFF9800) else Color(0xFF1E2D29),
+        color = if (isHighlighted) Color(0xFFFF9800) else Color(0xFF1E2D29),
         border = BorderStroke(
-            width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) Color(0xFFFFD54F) else Color(0x33FFFFFF)
+            width = if (isHighlighted) 2.5.dp else 1.dp,
+            color = if (isHighlighted) Color(0xFFFFE082) else Color(0xFF3E544E)
         ),
         modifier = modifier
             .scale(scale)
@@ -1360,15 +1376,15 @@ private fun TvActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = if (isFocused) Color.Black else tint,
+                tint = if (isHighlighted) Color.Black else Color(0xFFE4F0EC),
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = label,
-                color = if (isFocused) Color.Black else Color.White,
+                color = if (isHighlighted) Color.Black else Color(0xFFE4F0EC),
                 fontSize = 11.sp,
-                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium
+                fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Medium
             )
         }
     }
@@ -1379,36 +1395,44 @@ private fun TvTabButton(
     title: String,
     isSelected: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHighlighted = isFocused || isPressed
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.04f else 1.0f,
+        targetValue = if (isHighlighted) 1.04f else 1.0f,
         label = "tab_btn_scale"
     )
 
+    // Calm neutral dark slate when unfocused; NO red/green/yellow accents when unfocused!
     val bgColor = when {
-        isFocused -> Color(0xFFFF9800)
-        isSelected -> Color(0xFF263833)
-        else -> Color(0xFF1B2624)
+        isHighlighted -> Color(0xFFFF9800)
+        isSelected -> Color(0xFF243833)
+        else -> Color(0xFF182220)
     }
 
     val contentColor = when {
-        isFocused -> Color.Black
-        isSelected -> accentColor
-        else -> Color(0xFF88A29B)
+        isHighlighted -> Color.Black
+        isSelected -> Color.White
+        else -> Color(0xFFA5BDB7)
+    }
+
+    val borderColor = when {
+        isHighlighted -> Color(0xFFFFE082)
+        isSelected -> Color(0xFF5D8A7E)
+        else -> Color(0x28FFFFFF)
     }
 
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = bgColor,
         border = BorderStroke(
-            width = if (isFocused) 2.dp else if (isSelected) 1.5.dp else 1.dp,
-            color = if (isFocused) Color(0xFFFFD54F) else if (isSelected) accentColor else Color(0x22FFFFFF)
+            width = if (isHighlighted) 2.5.dp else if (isSelected) 1.5.dp else 1.dp,
+            color = borderColor
         ),
         modifier = modifier
             .scale(scale)
@@ -1430,10 +1454,10 @@ private fun TvTabButton(
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = title,
+                text = if (isSelected && !isHighlighted) "• $title" else title,
                 color = contentColor,
                 fontSize = 11.sp,
-                fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (isSelected || isHighlighted) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

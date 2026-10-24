@@ -1,6 +1,7 @@
 package com.example.player
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -31,12 +32,14 @@ fun YouTubePlayerView(
     videoId: String,
     modifier: Modifier = Modifier,
     onPlaybackStarted: () -> Unit = {},
-    onPlaybackError: (String) -> Unit = {}
+    onPlaybackError: (String) -> Unit = {},
+    onProcessLog: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val currentOnStarted by rememberUpdatedState(onPlaybackStarted)
     val currentOnError by rememberUpdatedState(onPlaybackError)
+    val currentOnProcessLog by rememberUpdatedState(onProcessLog)
 
     val webView = remember(context) {
         WebView(context).apply {
@@ -51,11 +54,9 @@ fun YouTubePlayerView(
 
             // CRITICAL FOR ANDROID TV:
             // Disable D-pad/keyboard focus on the WebView so it does NOT hijack TV remote navigation
-            // from the Compose UI (channel cards, tabs, and buttons). Mobile touch gestures still function.
             isFocusable = false
             isFocusableInTouchMode = false
 
-            // Enable first-party and third-party cookies so user authentication / human checks persist
             try {
                 val cookieManager = CookieManager.getInstance()
                 cookieManager.setAcceptCookie(true)
@@ -66,7 +67,6 @@ fun YouTubePlayerView(
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = true
-                // Critical: allows unmuted autoplay without user gesture in Android WebView
                 mediaPlaybackRequiresUserGesture = false
                 loadWithOverviewMode = true
                 useWideViewPort = true
@@ -81,10 +81,21 @@ fun YouTubePlayerView(
                 } catch (e: Exception) {}
             }
 
+            mainHandler.post {
+                currentOnProcessLog("[WebView] Hardware-Accelerated WebView ও Cookie সেশন প্রস্তুত")
+            }
+
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     return false
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    mainHandler.post {
+                        currentOnProcessLog("[HTTP Connect] এম্বেড সার্ভারের সাথে সংযোগ স্থাপিত হয়েছে...")
+                    }
                 }
 
                 override fun onReceivedError(
@@ -94,6 +105,9 @@ fun YouTubePlayerView(
                 ) {
                     super.onReceivedError(view, request, error)
                     if (request?.isForMainFrame == true) {
+                        mainHandler.post {
+                            currentOnProcessLog("[Fallback] লোকাল YouTube IFrame এম্বেড ইঞ্জিনে সুইচ করা হয়েছে")
+                        }
                         val fallbackHtml = buildYouTubeHtml(videoId)
                         view?.loadDataWithBaseURL(
                             "https://bcs24admin.org.bd",
@@ -112,6 +126,9 @@ fun YouTubePlayerView(
                 ) {
                     super.onReceivedHttpError(view, request, errorResponse)
                     if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 200) >= 400) {
+                        mainHandler.post {
+                            currentOnProcessLog("[Fallback] HTTP ${errorResponse?.statusCode} — লোকাল এম্বেড ইঞ্জিন চালু")
+                        }
                         val fallbackHtml = buildYouTubeHtml(videoId)
                         view?.loadDataWithBaseURL(
                             "https://bcs24admin.org.bd",
@@ -129,19 +146,28 @@ fun YouTubePlayerView(
                         CookieManager.getInstance().flush()
                     } catch (e: Exception) {}
 
-                    // Inject runtime audio & true-PLAYING monitor:
-                    // 1. Overrides any server-cached player.mute() call so channels NEVER play muted.
-                    // 2. Forces unMute() + setVolume(100).
-                    // 3. Signals onActualVideoPlaying() ONLY when YT.PlayerState.PLAYING (state === 1)
-                    //    is reached and video frames are actively rendering (eliminating black-screen flash).
+                    mainHandler.post {
+                        currentOnProcessLog("[DOM Ready] HTML লোড সম্পন্ন — অডিও গার্ড ও YT স্ট্রিম মনিটর ইনজেক্ট")
+                    }
+
                     val monitorScript = """
                         (function() {
                             if (window.__nokshiMonitorInstalled) return;
                             window.__nokshiMonitorInstalled = true;
                             var actualNotified = false;
-                            var ticks = 0;
+                            var playerDetected = false;
+                            var lastState = -999;
+                            var lastQuality = '';
+
+                            function emitLog(msg) {
+                                try {
+                                    if (window.AndroidBridge && window.AndroidBridge.onBackendEvent) {
+                                        window.AndroidBridge.onBackendEvent(msg);
+                                    }
+                                } catch(e) {}
+                            }
+
                             var timer = setInterval(function() {
-                                ticks++;
                                 try {
                                     if (window.YT && window.YT.Player && window.YT.Player.prototype) {
                                         window.YT.Player.prototype.mute = function() {
@@ -149,14 +175,43 @@ fun YouTubePlayerView(
                                         };
                                     }
                                     if (typeof player !== 'undefined' && player) {
+                                        if (!playerDetected) {
+                                            playerDetected = true;
+                                            emitLog('[YT.Player] IFrame API প্লেয়ার অবজেক্ট তৈরি ও অডিও ১০০% সেট');
+                                        }
                                         if (typeof player.isMuted === 'function' && player.isMuted()) {
                                             player.unMute();
+                                            emitLog('[Audio Guard] অটো-মিউট প্রতিরোধ করে সাউন্ড সচল রাখা হয়েছে');
                                         }
                                         if (typeof player.setVolume === 'function') {
                                             player.setVolume(100);
                                         }
+                                        if (typeof player.getPlaybackQuality === 'function') {
+                                            var q = player.getPlaybackQuality();
+                                            if (q && q !== 'unknown' && q !== lastQuality) {
+                                                lastQuality = q;
+                                                emitLog('[YT.Quality] ভিডিও স্ট্রিম কোয়ালিটি: ' + q);
+                                            }
+                                        }
                                         if (typeof player.getPlayerState === 'function') {
                                             var st = player.getPlayerState();
+                                            if (st !== lastState) {
+                                                var prevState = lastState;
+                                                lastState = st;
+                                                if (st === -1) {
+                                                    emitLog('[YT.State=-1] YouTube স্ট্রিম সার্ভার হ্যান্ডশেক চলছে...');
+                                                } else if (st === 3) {
+                                                    emitLog('[YT.State=3] লাইভ ভিডিও সেগমেন্ট বাফারিং হচ্ছে (BUFFERING)...');
+                                                } else if (st === 1) {
+                                                    if (!actualNotified) {
+                                                        emitLog('[YT.State=1] ভিডিও ডিকোডিং শুরু (PLAYING) — প্রথম ফ্রেম রেন্ডার হচ্ছে...');
+                                                    } else if (prevState === 3) {
+                                                        emitLog('[YT.State=1] বাফারিং শেষে লাইভ স্ট্রিম পুনরায় সচল');
+                                                    }
+                                                } else if (st === 2) {
+                                                    emitLog('[YT.State=2] প্লেয়ার সাময়িক বিরতি (PAUSED)');
+                                                }
+                                            }
                                             if (st === 1 && !actualNotified) {
                                                 actualNotified = true;
                                                 setTimeout(function() {
@@ -164,6 +219,7 @@ fun YouTubePlayerView(
                                                         if (player.isMuted && player.isMuted()) player.unMute();
                                                         if (player.setVolume) player.setVolume(100);
                                                     } catch(e) {}
+                                                    emitLog('[Frame Render] ভিডিও ফ্রেম প্রস্তুত — স্প্ল্যাশ ব্যানার অপসারণ');
                                                     if (window.AndroidBridge && window.AndroidBridge.onActualVideoPlaying) {
                                                         window.AndroidBridge.onActualVideoPlaying();
                                                     }
@@ -172,10 +228,7 @@ fun YouTubePlayerView(
                                         }
                                     }
                                 } catch(e) {}
-                                if (actualNotified && ticks > 40) {
-                                    clearInterval(timer);
-                                }
-                            }, 200);
+                            }, 220);
                         })();
                     """.trimIndent()
                     view?.evaluateJavascript(monitorScript, null)
@@ -184,14 +237,17 @@ fun YouTubePlayerView(
 
             val bridgeObject = object {
                 @JavascriptInterface
+                fun onBackendEvent(msg: String) {
+                    mainHandler.post { currentOnProcessLog(msg) }
+                }
+
+                @JavascriptInterface
                 fun onActualVideoPlaying() {
                     mainHandler.post { currentOnStarted() }
                 }
 
                 @JavascriptInterface
                 fun onYoutubeStarted() {
-                    // Server's older youtube_embed.html may fire onYoutubeStarted on BUFFERING (3).
-                    // Verify via JS whether state === 1 (PLAYING) before dismissing splash!
                     mainHandler.post {
                         evaluateJavascript(
                             "(function(){ try { if (typeof player !== 'undefined' && player) { if (player.unMute) player.unMute(); if (player.setVolume) player.setVolume(100); return player.getPlayerState(); } } catch(e){} return -1; })()"
@@ -205,7 +261,10 @@ fun YouTubePlayerView(
 
                 @JavascriptInterface
                 fun onYoutubeError(errorCode: Int) {
-                    mainHandler.post { currentOnError("YouTube error code: $errorCode") }
+                    mainHandler.post {
+                        currentOnProcessLog("[YT.Error] YouTube প্লেয়ার এরর কোড: $errorCode")
+                        currentOnError("YouTube error code: $errorCode")
+                    }
                 }
 
                 @JavascriptInterface
@@ -223,12 +282,15 @@ fun YouTubePlayerView(
 
                 @JavascriptInterface
                 fun onBuffering() {
-                    // Keep splash visible while buffering so no black screen is shown!
+                    // Splash stays visible during buffering
                 }
 
                 @JavascriptInterface
                 fun onError(errorCode: Int) {
-                    mainHandler.post { currentOnError("YouTube error code: $errorCode") }
+                    mainHandler.post {
+                        currentOnProcessLog("[YT.Error] YouTube প্লেয়ার এরর কোড: $errorCode")
+                        currentOnError("YouTube error code: $errorCode")
+                    }
                 }
             }
 
@@ -239,8 +301,12 @@ fun YouTubePlayerView(
 
     LaunchedEffect(videoId) {
         if (videoId.isNotEmpty()) {
+            currentOnProcessLog("[URL Parser] YouTube Video ID শনাক্ত: $videoId")
             val serverEmbedUrl = "https://bcs24admin.org.bd/tv/youtube_embed.html?id=$videoId"
+            currentOnProcessLog("[HTTP GET] youtube_embed.html?id=$videoId লোড হচ্ছে...")
             webView.loadUrl(serverEmbedUrl)
+        } else {
+            currentOnProcessLog("[URL Error] বৈধ YouTube Video ID পাওয়া যায়নি")
         }
     }
 
@@ -329,7 +395,6 @@ private fun buildYouTubeHtml(videoId: String): String {
                 }
 
                 function onPlayerStateChange(event) {
-                    // Strictly 1 = PLAYING (never dismiss splash on 3 = BUFFERING)
                     if (event.data === 1) {
                         ensureSound(event.target);
                         if (!notified) {
@@ -349,24 +414,6 @@ private fun buildYouTubeHtml(videoId: String): String {
                         window.AndroidBridge.onYoutubeError(event.data);
                     }
                 }
-
-                window.addEventListener('message', function(event) {
-                    try {
-                        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                        if (data && data.event === 'onStateChange' && data.info === 1 && !notified) {
-                            notified = true;
-                            setTimeout(function() {
-                                if (window.AndroidBridge && window.AndroidBridge.onActualVideoPlaying) {
-                                    window.AndroidBridge.onActualVideoPlaying();
-                                }
-                            }, 300);
-                        } else if (data && data.event === 'onError') {
-                            if (window.AndroidBridge && window.AndroidBridge.onYoutubeError) {
-                                window.AndroidBridge.onYoutubeError(data.info);
-                            }
-                        }
-                    } catch (e) {}
-                });
             </script>
         </body>
         </html>

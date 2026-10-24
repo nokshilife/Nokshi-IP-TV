@@ -38,7 +38,7 @@ class ServerCheckService {
             Log.d("ServerCheck", "Today in Bangladesh: $todayBd")
 
             withContext(Dispatchers.Main) {
-                onUpdating("reDirectLog.txt চেক হচ্ছে (বাংলাদেশ তারিখ: $todayBd)...")
+                onUpdating("[HTTP GET] reDirectLog.txt চেক হচ্ছে (Asia/Dhaka: $todayBd)...")
             }
 
             val logRequest = Request.Builder()
@@ -57,13 +57,17 @@ class ServerCheckService {
             val serverDateMatch = dateRegex.find(serverLogContent)
             val serverDate = serverDateMatch?.groupValues?.get(1) ?: serverLogContent.take(10)
 
+            withContext(Dispatchers.Main) {
+                onUpdating("[DateCompare] সার্ভার তারিখ: $serverDate | বাংলাদেশ তারিখ: $todayBd")
+            }
+
             if (!forceUpdate && serverDate == todayBd) {
                 Log.d("ServerCheck", "Dates match ($serverDate). No update needed.")
-                return@withContext Result.success("সার্ভার লগ: $serverDate | বাংলাদেশ: $todayBd (চ্যানেল হালনাগাদ রয়েছে)")
+                return@withContext Result.success("[DateMatch] সার্ভার লগ ($serverDate) হালনাগাদ রয়েছে")
             }
 
             withContext(Dispatchers.Main) {
-                onUpdating("চ্যানেল আপডেট হচ্ছে... check_youtube_live.php কল করা হয়েছে (সার্ভার: $serverDate)")
+                onUpdating("[HTTP GET] চ্যানেল আপডেট হচ্ছে... check_youtube_live.php কল করা হয়েছে")
             }
 
             Log.d("ServerCheck", "Calling check_youtube_live.php (force=$forceUpdate)...")
@@ -76,7 +80,7 @@ class ServerCheckService {
             Log.d("ServerCheck", "check_youtube_live response code: ${checkResponse.code}")
 
             if (checkResponse.isSuccessful) {
-                Result.success("চ্যানেল সফলভাবে আপডেট সম্পন্ন হয়েছে ($todayBd)")
+                Result.success("[LiveUpdate] check_youtube_live.php সফলভাবে সম্পন্ন ($todayBd)")
             } else {
                 Result.failure(Exception("চ্যানেল আপডেট স্ক্রিপ্ট ত্রুটি (HTTP ${checkResponse.code})"))
             }
@@ -149,10 +153,10 @@ class ServerCheckService {
 
     /**
      * Fetches live channels from MySQL via NokshiIPTVapi.php or credentialsGemini.php
-     * Supports both `display_order` (MySQL snake_case) and `displayOrder` (JSON camelCase)
-     * and returns channels sorted ascending by displayOrder, then id.
      */
-    suspend fun fetchLiveChannelsFromServer(): Result<List<Channel>> = withContext(Dispatchers.IO) {
+    suspend fun fetchLiveChannelsFromServer(
+        onStep: (String) -> Unit = {}
+    ): Result<List<Channel>> = withContext(Dispatchers.IO) {
         val urls = listOf(
             NOKSHI_API_URL,
             "$CREDENTIALS_URL?action=get_channels"
@@ -160,9 +164,11 @@ class ServerCheckService {
 
         for (url in urls) {
             try {
-                // Add cache-busting timestamp so Cloudflare never serves stale display_order
                 val separator = if (url.contains("?")) "&" else "?"
                 val freshUrl = "${url}${separator}_t=${System.currentTimeMillis()}"
+                withContext(Dispatchers.Main) {
+                    onStep("[MySQL API] NokshiIPTVapi.php থেকে JSON ডেটা রিড হচ্ছে...")
+                }
                 val request = Request.Builder()
                     .url(freshUrl)
                     .header("Cache-Control", "no-cache")
@@ -211,6 +217,9 @@ class ServerCheckService {
                                 }
                             }
                             val sortedChannels = channels.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+                            withContext(Dispatchers.Main) {
+                                onStep("[JSON Parser] ${sortedChannels.size}টি চ্যানেল পার্স ও display_order সর্ট সম্পন্ন")
+                            }
                             Log.d("ServerCheck", "Loaded & sorted ${sortedChannels.size} channels from MySQL API: $url")
                             return@withContext Result.success(sortedChannels)
                         }

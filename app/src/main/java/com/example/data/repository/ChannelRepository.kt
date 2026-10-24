@@ -191,8 +191,10 @@ class ChannelRepository(private val context: Context) {
         }
     }
 
-    suspend fun syncChannelsWithServer(): Result<Int> = withContext(Dispatchers.IO) {
-        val result = serverCheckService.fetchLiveChannelsFromServer()
+    suspend fun syncChannelsWithServer(
+        onStep: (String) -> Unit = {}
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        val result = serverCheckService.fetchLiveChannelsFromServer(onStep)
         if (result.isSuccess) {
             val list = result.getOrNull() ?: emptyList()
             if (list.isNotEmpty()) {
@@ -202,6 +204,9 @@ class ChannelRepository(private val context: Context) {
                 channelDao.insertChannels(
                     sorted.map { ChannelEntity.fromDomain(it.copy(isFavorite = it.id in favIds)) }
                 )
+                withContext(Dispatchers.Main) {
+                    onStep("[Room SQLite] ${sorted.size}টি চ্যানেল লোকাল ডাটাবেজে সংরক্ষণ সম্পন্ন")
+                }
                 Log.d("ChannelRepo", "Synced ${sorted.size} channels from MySQL server API")
                 return@withContext Result.success(sorted.size)
             }
@@ -214,13 +219,12 @@ class ChannelRepository(private val context: Context) {
         onUpdating: (String) -> Unit
     ): Result<Pair<String, Int>> {
         val checkResult = serverCheckService.performServerCheck(forceUpdate, onUpdating)
-        onUpdating("MySQL ডাটাবেজ থেকে চ্যানেল ও display_order সিঙ্ক হচ্ছে...")
-        val syncRes = syncChannelsWithServer()
+        val syncRes = syncChannelsWithServer(onUpdating)
         val syncedCount = syncRes.getOrElse { 0 }
         return if (checkResult.isSuccess) {
             Result.success(Pair(checkResult.getOrNull() ?: "হালনাগাদ সম্পন্ন", syncedCount))
         } else if (syncedCount > 0) {
-            Result.success(Pair("সার্ভার থেকে $syncedCount টি চ্যানেল সিঙ্ক সম্পন্ন", syncedCount))
+            Result.success(Pair("[ServerSync] সার্ভার থেকে $syncedCount টি চ্যানেল সিঙ্ক সম্পন্ন", syncedCount))
         } else {
             Result.failure(checkResult.exceptionOrNull() ?: Exception("সার্ভার সংযোগ ব্যর্থ"))
         }
