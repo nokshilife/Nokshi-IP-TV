@@ -37,6 +37,10 @@ class ServerCheckService {
             val todayBd = bdDateFormat.format(Date())
             Log.d("ServerCheck", "Today in Bangladesh: $todayBd")
 
+            withContext(Dispatchers.Main) {
+                onUpdating("reDirectLog.txt চেক হচ্ছে (বাংলাদেশ তারিখ: $todayBd)...")
+            }
+
             val logRequest = Request.Builder()
                 .url(REDIRECT_LOG_URL)
                 .build()
@@ -59,7 +63,7 @@ class ServerCheckService {
             }
 
             withContext(Dispatchers.Main) {
-                onUpdating("চ্যানেল আপডেট হচ্ছে... (সার্ভার: $serverDate, বাংলাদেশ: $todayBd)")
+                onUpdating("চ্যানেল আপডেট হচ্ছে... check_youtube_live.php কল করা হয়েছে (সার্ভার: $serverDate)")
             }
 
             Log.d("ServerCheck", "Calling check_youtube_live.php (force=$forceUpdate)...")
@@ -72,7 +76,7 @@ class ServerCheckService {
             Log.d("ServerCheck", "check_youtube_live response code: ${checkResponse.code}")
 
             if (checkResponse.isSuccessful) {
-                Result.success("চ্যানেল সফলভাবে আপডেট সম্পন্ন হয়েছে")
+                Result.success("চ্যানেল সফলভাবে আপডেট সম্পন্ন হয়েছে ($todayBd)")
             } else {
                 Result.failure(Exception("চ্যানেল আপডেট স্ক্রিপ্ট ত্রুটি (HTTP ${checkResponse.code})"))
             }
@@ -145,6 +149,8 @@ class ServerCheckService {
 
     /**
      * Fetches live channels from MySQL via NokshiIPTVapi.php or credentialsGemini.php
+     * Supports both `display_order` (MySQL snake_case) and `displayOrder` (JSON camelCase)
+     * and returns channels sorted ascending by displayOrder, then id.
      */
     suspend fun fetchLiveChannelsFromServer(): Result<List<Channel>> = withContext(Dispatchers.IO) {
         val urls = listOf(
@@ -154,7 +160,13 @@ class ServerCheckService {
 
         for (url in urls) {
             try {
-                val request = Request.Builder().url(url).build()
+                // Add cache-busting timestamp so Cloudflare never serves stale display_order
+                val separator = if (url.contains("?")) "&" else "?"
+                val freshUrl = "${url}${separator}_t=${System.currentTimeMillis()}"
+                val request = Request.Builder()
+                    .url(freshUrl)
+                    .header("Cache-Control", "no-cache")
+                    .build()
                 val response = client.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
@@ -165,28 +177,42 @@ class ServerCheckService {
                             val channels = mutableListOf<Channel>()
                             for (i in 0 until array.length()) {
                                 val item = array.getJSONObject(i)
-                                val category = item.optInt("category", 0)
-                                val isActive = item.optBoolean("isActive", true)
+                                val category = item.optInt("category", item.optInt("Category", 0))
+                                val isActive = when {
+                                    item.has("isActive") -> item.optBoolean("isActive", true)
+                                    item.has("is_active") -> item.optInt("is_active", 1) == 1 || item.optBoolean("is_active", true)
+                                    else -> true
+                                }
+                                val parsedDisplayOrder = when {
+                                    item.has("display_order") && !item.isNull("display_order") ->
+                                        item.optString("display_order").trim().toIntOrNull() ?: item.optInt("display_order", i)
+                                    item.has("displayOrder") && !item.isNull("displayOrder") ->
+                                        item.optString("displayOrder").trim().toIntOrNull() ?: item.optInt("displayOrder", i)
+                                    else -> i
+                                }
+                                val rawPoster = (item.optString("poster", "").ifEmpty { item.optString("Poster", "") }).trim()
+
                                 if (category == 0 && isActive) {
                                     channels.add(
                                         Channel(
                                             id = item.getInt("id"),
                                             type = ChannelType.YOUTUBE,
-                                            name = item.optString("name", "Channel"),
-                                            streamUrl = item.optString("youtubeUrl", ""),
-                                            channelUrl = item.optString("channelUrl", null),
-                                            poster = item.optString("poster", null).takeIf { it.isNotEmpty() && it != "null" },
+                                            name = item.optString("name", item.optString("stream_name", "Channel")),
+                                            streamUrl = item.optString("youtubeUrl", item.optString("youtube_url", "")),
+                                            channelUrl = item.optString("channelUrl", item.optString("ChannelURL", null)),
+                                            poster = rawPoster.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) },
                                             groupTitle = "YouTube Live",
                                             category = category,
                                             isActive = isActive,
-                                            displayOrder = item.optInt("displayOrder", i),
+                                            displayOrder = parsedDisplayOrder,
                                             isFavorite = false
                                         )
                                     )
                                 }
                             }
-                            Log.d("ServerCheck", "Loaded ${channels.size} channels from MySQL API: $url")
-                            return@withContext Result.success(channels)
+                            val sortedChannels = channels.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+                            Log.d("ServerCheck", "Loaded & sorted ${sortedChannels.size} channels from MySQL API: $url")
+                            return@withContext Result.success(sortedChannels)
                         }
                     }
                 }

@@ -10,11 +10,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ChannelDao {
 
-    @Query("SELECT * FROM channels WHERE type = :type AND isActive = 1 ORDER BY displayOrder ASC")
+    @Query("SELECT * FROM channels WHERE type = :type AND isActive = 1 ORDER BY displayOrder ASC, id ASC")
     fun getChannelsByType(type: String): Flow<List<ChannelEntity>>
 
-    @Query("SELECT * FROM channels WHERE isFavorite = 1 AND isActive = 1 ORDER BY displayOrder ASC")
+    @Query("SELECT * FROM channels WHERE isFavorite = 1 AND isActive = 1 ORDER BY displayOrder ASC, id ASC")
     fun getFavoriteChannels(): Flow<List<ChannelEntity>>
+
+    @Query("SELECT id FROM channels WHERE isFavorite = 1")
+    suspend fun getFavoriteChannelIds(): List<Int>
 
     @Query("SELECT * FROM channels WHERE id = :id LIMIT 1")
     suspend fun getChannelById(id: Int): ChannelEntity?

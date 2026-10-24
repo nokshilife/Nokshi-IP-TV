@@ -6,11 +6,12 @@ import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -26,11 +27,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -39,8 +40,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Fullscreen
@@ -48,16 +47,14 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.ui.draw.scale
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -71,14 +68,25 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,7 +102,11 @@ import com.example.ui.components.PinVerificationDialog
 import com.example.ui.components.PlaylistSettingsDialog
 import com.example.ui.components.SleepTimerDialog
 import com.example.ui.components.TvFocusCard
+import com.example.ui.viewmodel.BackendLogEntry
+import com.example.ui.viewmodel.BackendLogLevel
 import com.example.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -103,6 +115,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val coroutineScope = rememberCoroutineScope()
 
     val activeTab by viewModel.activeTab.collectAsState()
     val selectedGroup by viewModel.selectedGroup.collectAsState()
@@ -111,6 +124,15 @@ fun HomeScreen(
     val isFullscreen by viewModel.isFullscreen.collectAsState()
     val serverSyncState by viewModel.serverSyncState.collectAsState()
     val sleepTimerSeconds by viewModel.sleepTimerSeconds.collectAsState()
+    val isAppStartupSplashVisible by viewModel.isAppStartupSplashVisible.collectAsState()
+
+    val backendLogs by viewModel.backendLogs.collectAsState()
+    val activeBackendStatus by viewModel.activeBackendStatus.collectAsState()
+    val isBackendBusy by viewModel.isBackendBusy.collectAsState()
+
+    val ytChannels by viewModel.youtubeChannels.collectAsState()
+    val m3uChannels by viewModel.m3uChannels.collectAsState()
+    val favChannels by viewModel.favoriteChannels.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -131,27 +153,43 @@ fun HomeScreen(
         activeTab,
         selectedGroup,
         m3uVisibleLimit,
-        viewModel.youtubeChannels.collectAsState().value,
-        viewModel.m3uChannels.collectAsState().value,
-        viewModel.favoriteChannels.collectAsState().value
+        ytChannels,
+        m3uChannels,
+        favChannels
     ) {
-        viewModel.getVisibleChannels()
+        val baseList = when (activeTab) {
+            "YOUTUBE" -> ytChannels.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            "M3U" -> m3uChannels
+            "FAVORITES" -> favChannels
+            else -> emptyList()
+        }
+        val filtered = if (selectedGroup.isNullOrEmpty() || selectedGroup == "All") {
+            baseList
+        } else {
+            baseList.filter { it.groupTitle.equals(selectedGroup, ignoreCase = true) }
+        }
+        when (activeTab) {
+            "YOUTUBE" -> filtered.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            "M3U" -> filtered.take(m3uVisibleLimit)
+            else -> filtered
+        }
     }
 
     val fullScreenFocusRequester = remember { FocusRequester() }
+    val channelFocusRequesters = remember { mutableMapOf<Int, FocusRequester>() }
     val gridState = rememberLazyGridState()
 
-    // User requirement: "যেকোন চ্যানেল চেঞ্জের পর ফুল স্ক্রিন বাটন সেট ফোকাসে থাকবে যাতে সহজে এক প্রেসে ফুল স্ক্রিন করতে পারি।"
-    LaunchedEffect(currentChannel?.id) {
-        if (currentChannel != null && !isFullscreen) {
-            kotlinx.coroutines.delay(200)
+    // Focus Full Screen button automatically whenever channel changes (after startup splash closes)
+    LaunchedEffect(currentChannel?.id, isAppStartupSplashVisible) {
+        if (!isAppStartupSplashVisible && currentChannel != null && !isFullscreen) {
+            delay(180)
             try {
                 fullScreenFocusRequester.requestFocus()
             } catch (e: Exception) {}
         }
     }
 
-    // User requirement: "m3u তে যেহেতু অনেক চ্যানেল থাকবে তাই Lazy Load টেকনোলোজি ব্যবহার করবেন।"
+    // Lazy load pagination for M3U channels
     LaunchedEffect(gridState.firstVisibleItemIndex, visibleChannels.size) {
         if (activeTab == "M3U") {
             val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -162,11 +200,11 @@ fun HomeScreen(
     }
 
     // Extract categories/groups for current tab
-    val availableGroups = remember(activeTab, viewModel.youtubeChannels.collectAsState().value, viewModel.m3uChannels.collectAsState().value) {
+    val availableGroups = remember(activeTab, ytChannels, m3uChannels, favChannels) {
         val base = when (activeTab) {
-            "YOUTUBE" -> viewModel.youtubeChannels.value
-            "M3U" -> viewModel.m3uChannels.value
-            else -> viewModel.favoriteChannels.value
+            "YOUTUBE" -> ytChannels
+            "M3U" -> m3uChannels
+            else -> favChannels
         }
         val groups = base.map { it.groupTitle }.distinct().filter { it.isNotEmpty() }
         listOf("All") + groups
@@ -224,9 +262,8 @@ fun HomeScreen(
                         }
                     )
             ) {
-                // Video Player
                 currentChannel?.let { ch ->
-                    androidx.compose.runtime.key(ch.id) {
+                    androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                         if (ch.type == ChannelType.YOUTUBE) {
                             val videoId = ch.getYouTubeVideoId() ?: ""
                             YouTubePlayerView(
@@ -247,20 +284,19 @@ fun HomeScreen(
                     }
                 }
 
-                // Flash Banner
                 FlashBanner(
                     isVisible = isFlashBannerVisible,
                     channelName = currentChannel?.name ?: "",
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Fullscreen Exit Button
                 IconButton(
                     onClick = { viewModel.setFullscreen(false) },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
                         .background(Color(0x88000000), CircleShape)
+                        .testTag("exit_fullscreen_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.FullscreenExit,
@@ -271,21 +307,19 @@ fun HomeScreen(
             }
         } else if (isLandscape) {
             // Android TV & Landscape Two-Pane Layout
-            // Left: Player + Channel Info + TV Controls (Full Screen, Favorite, Settings, Sleep, Refresh)
-            // Right: Tabs + Categories + Channel Grid (Both fully visible & D-pad navigable on TV!)
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF0F1715))
             ) {
-                // Left Pane (Video Player & TV Controls)
+                // Left Pane (Header + Player + Channel Name + Action Bar + Backend Process Monitor)
                 Column(
                     modifier = Modifier
                         .weight(1.15f)
                         .fillMaxHeight()
                         .padding(12.dp)
                 ) {
-                    // Mini Header: App Logo + Title + Server Sync / Live Indicator
+                    // Clean Header: App Logo + Title ONLY (Crossed-out "Android TV Live" & "YT LIVE" removed)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -300,34 +334,12 @@ fun HomeScreen(
                                 .clip(CircleShape)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Nokshi IP TV",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                            Text(
-                                text = "Android TV Live",
-                                color = Color(0xFF80CBC4),
-                                fontSize = 10.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (currentChannel?.type == ChannelType.YOUTUBE) Color(0xFFE53935) else Color(0xFF00897B)
-                        ) {
-                            Text(
-                                text = if (currentChannel?.type == ChannelType.YOUTUBE) "YT LIVE" else "IPTV",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Text(
+                            text = "Nokshi IP TV",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
                     }
 
                     // 16:9 Video Player Box inside Left Pane
@@ -339,7 +351,7 @@ fun HomeScreen(
                             .background(Color.Black)
                     ) {
                         currentChannel?.let { ch ->
-                            androidx.compose.runtime.key(ch.id) {
+                            androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                                 if (ch.type == ChannelType.YOUTUBE) {
                                     val videoId = ch.getYouTubeVideoId() ?: ""
                                     YouTubePlayerView(
@@ -380,37 +392,26 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Channel Name & Category Details
+                    // Channel Name ONLY (Crossed-out "YouTube Live" subtitle removed)
                     Text(
                         text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentChannel?.groupTitle?.takeIf { it.isNotEmpty() } ?: "Nokshi IP TV",
-                        color = Color(0xFF80CBC4),
-                        fontSize = 11.sp,
+                        fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // TV Action Buttons Row (Full Screen, Favorite, Settings, Sleep Timer, Refresh)
+                    // TV Action Buttons Row:
+                    // Left: [ফেভারিট] [সেটিংস] [স্লিপ] ---- Spacer ---- Far Right: [ফুল স্ক্রিন]
+                    // ("রিফ্রেশ" button removed as requested; Right D-pad on "ফুল স্ক্রিন" jumps to next channel card!)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Prominent Full Screen Button (Auto-focused on channel change!)
-                        FullScreenButton(
-                            onClick = { viewModel.setFullscreen(true) },
-                            focusRequester = fullScreenFocusRequester
-                        )
-
                         // Favorite Button
                         currentChannel?.let { ch ->
                             TvActionButton(
@@ -418,17 +419,19 @@ fun HomeScreen(
                                 icon = if (ch.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                 tint = if (ch.isFavorite) Color(0xFFFFD600) else Color.White,
                                 contentDescription = "Favorite",
-                                label = if (ch.isFavorite) "পছন্দ" else "ফেভারিট"
+                                label = if (ch.isFavorite) "পছন্দ" else "ফেভারিট",
+                                modifier = Modifier.testTag("tv_favorite_button")
                             )
                         }
 
-                        // Settings Button (Directly accessible on Android TV!)
+                        // Settings Button
                         TvActionButton(
                             onClick = { viewModel.openSettings() },
                             icon = Icons.Default.Settings,
                             tint = Color(0xFFFF9800),
                             contentDescription = "সেটিংস",
-                            label = "সেটিংস"
+                            label = "সেটিংস",
+                            modifier = Modifier.testTag("tv_settings_button")
                         )
 
                         // Sleep Timer Button
@@ -437,21 +440,56 @@ fun HomeScreen(
                             icon = Icons.Default.Bedtime,
                             tint = if (sleepTimerSeconds > 0) Color(0xFFFFB300) else Color(0xFFB0BEC5),
                             contentDescription = "স্লিপ",
-                            label = if (sleepTimerSeconds > 0) "${sleepTimerSeconds / 60}m" else "স্লিপ"
+                            label = if (sleepTimerSeconds > 0) "${sleepTimerSeconds / 60}m" else "স্লিপ",
+                            modifier = Modifier.testTag("tv_sleep_button")
                         )
 
-                        // Refresh / Sync Button
-                        TvActionButton(
-                            onClick = { viewModel.checkServer(forceUpdate = true) },
-                            icon = Icons.Default.Refresh,
-                            tint = Color(0xFF80CBC4),
-                            contentDescription = "রিফ্রেশ",
-                            label = "রিফ্রেশ"
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Far-Right Prominent Full Screen Button:
+                        // Pressing Right D-pad jumps directly to the thumbnail card AFTER the currently playing channel!
+                        FullScreenButton(
+                            onClick = { viewModel.setFullscreen(true) },
+                            focusRequester = fullScreenFocusRequester,
+                            onRightKeyPressed = {
+                                if (visibleChannels.isNotEmpty()) {
+                                    val curIdx = visibleChannels.indexOfFirst { it.id == currentChannel?.id }
+                                    val nextIdx = if (curIdx != -1 && curIdx + 1 < visibleChannels.size) curIdx + 1 else 0
+                                    val targetChannel = visibleChannels[nextIdx]
+                                    coroutineScope.launch {
+                                        val isItemVisible = gridState.layoutInfo.visibleItemsInfo.any { it.index == nextIdx }
+                                        if (!isItemVisible) {
+                                            gridState.scrollToItem((nextIdx - 3).coerceAtLeast(0))
+                                            delay(45)
+                                        }
+                                        try {
+                                            channelFocusRequesters[targetChannel.id]?.requestFocus()
+                                        } catch (e: Exception) {}
+                                    }
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                            modifier = Modifier.testTag("tv_fullscreen_button")
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Backend Process Monitor Panel (Fills empty space below TV controls)
+                    TvBackendProcessPanel(
+                        activeStatus = activeBackendStatus,
+                        isBusy = isBackendBusy,
+                        logs = backendLogs,
+                        sleepTimerSeconds = sleepTimerSeconds,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    )
                 }
 
-                // Right Pane: Top Tabs (YouTube / M3U / Favorites) + Categories + Channel Grid
+                // Right Pane: Top Tabs + Category Chips + Channel Grid
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -472,7 +510,9 @@ fun HomeScreen(
                             icon = Icons.Default.Videocam,
                             accentColor = Color(0xFFFF5252),
                             onClick = { viewModel.setActiveTab("YOUTUBE") },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("tab_youtube")
                         )
                         TvTabButton(
                             title = "M3U প্লেলিস্ট",
@@ -480,7 +520,9 @@ fun HomeScreen(
                             icon = Icons.Default.Tv,
                             accentColor = Color(0xFF00E676),
                             onClick = { viewModel.setActiveTab("M3U") },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("tab_m3u")
                         )
                         TvTabButton(
                             title = "প্রিয় চ্যানেল",
@@ -488,12 +530,14 @@ fun HomeScreen(
                             icon = Icons.Default.Star,
                             accentColor = Color(0xFFFFD600),
                             onClick = { viewModel.setActiveTab("FAVORITES") },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("tab_favorites")
                         )
                     }
 
-                    // Category Filter Chips (With amber/brown focus border requested by user)
-                    if (availableGroups.size > 1) {
+                    // Category Filter Chips (Only needed when multiple categories exist, e.g., M3U groups)
+                    if (activeTab != "YOUTUBE" && availableGroups.size > 2) {
                         LazyRow(
                             contentPadding = PaddingValues(vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -512,7 +556,7 @@ fun HomeScreen(
                         }
                     }
 
-                    // Channel Grid (Visible right beside the player on TV, lazy loaded!)
+                    // Channel Grid
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         if (visibleChannels.isEmpty()) {
                             Column(
@@ -543,14 +587,21 @@ fun HomeScreen(
                                 contentPadding = PaddingValues(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("tv_channel_grid")
                             ) {
                                 items(visibleChannels, key = { it.id }) { ch ->
+                                    val cardFocusRequester = remember(ch.id) {
+                                        channelFocusRequesters.getOrPut(ch.id) { FocusRequester() }
+                                    }
                                     TvFocusCard(
                                         channel = ch,
                                         isSelected = currentChannel?.id == ch.id,
                                         onClick = { viewModel.selectChannel(ch) },
-                                        onToggleFavorite = { viewModel.toggleFavorite(ch) }
+                                        onToggleFavorite = { viewModel.toggleFavorite(ch) },
+                                        focusRequester = cardFocusRequester,
+                                        modifier = Modifier.testTag("channel_card_${ch.id}")
                                     )
                                 }
                             }
@@ -646,7 +697,6 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Sleep Timer Button
                         IconButton(onClick = { viewModel.openSleepTimerDialog() }) {
                             Icon(
                                 imageVector = Icons.Default.Bedtime,
@@ -655,7 +705,6 @@ fun HomeScreen(
                             )
                         }
 
-                        // Refresh / Sync Button (Forces check_youtube_live.php and updates channel data)
                         IconButton(onClick = { viewModel.checkServer(forceUpdate = true) }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
@@ -664,7 +713,6 @@ fun HomeScreen(
                             )
                         }
 
-                        // Settings Button
                         IconButton(onClick = { viewModel.openSettings() }) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
@@ -735,7 +783,7 @@ fun HomeScreen(
                             )
                     ) {
                         currentChannel?.let { ch ->
-                            androidx.compose.runtime.key(ch.id) {
+                            androidx.compose.runtime.key(ch.id, ch.streamUrl) {
                                 if (ch.type == ChannelType.YOUTUBE) {
                                     val videoId = ch.getYouTubeVideoId() ?: ""
                                     YouTubePlayerView(
@@ -773,40 +821,9 @@ fun HomeScreen(
                             channelName = currentChannel?.name ?: "",
                             modifier = Modifier.fillMaxSize()
                         )
-
-                        // Top Gradient Overlay for title and fullscreen button
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .fillMaxWidth()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(Color(0xCC000000), Color.Transparent)
-                                    )
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = currentChannel?.name ?: "",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { viewModel.toggleFullscreen() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Fullscreen,
-                                    contentDescription = "Fullscreen",
-                                    tint = Color.White
-                                )
-                            }
-                        }
                     }
 
-                    // Dedicated Under-Player Control Bar requested by user
+                    // Mobile Under-Player Control Bar
                     Surface(
                         color = Color(0xFF141E1C),
                         tonalElevation = 4.dp,
@@ -819,46 +836,18 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
-                            // Channel Details
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
+                            Text(
+                                text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = if (currentChannel?.type == ChannelType.YOUTUBE) Color(0xFFE53935) else Color(0xFF00897B),
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) {
-                                    Text(
-                                        text = if (currentChannel?.type == ChannelType.YOUTUBE) "YT LIVE" else "IPTV",
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Column {
-                                    Text(
-                                        text = currentChannel?.name ?: "কোনো চ্যানেল নির্বাচিত নেই",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = currentChannel?.groupTitle?.takeIf { it.isNotEmpty() } ?: "Nokshi IP TV",
-                                        color = Color(0xFF80CBC4),
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
+                            )
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            // Action buttons: Favorite & Big Full Screen button
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 currentChannel?.let { ch ->
                                     IconButton(
@@ -875,18 +864,17 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                 }
 
-                                // User explicitly requested Full Screen button below YouTube Player
-                                // Styled for touch & TV D-pad remote focus highlight
                                 FullScreenButton(
                                     onClick = { viewModel.setFullscreen(true) },
-                                    focusRequester = fullScreenFocusRequester
+                                    focusRequester = fullScreenFocusRequester,
+                                    modifier = Modifier.testTag("mobile_fullscreen_button")
                                 )
                             }
                         }
                     }
 
-                    // Category Filter Chips (With amber/brown focus border requested by user)
-                    if (availableGroups.size > 1) {
+                    // Category Filter Chips (M3U groups)
+                    if (activeTab != "YOUTUBE" && availableGroups.size > 2) {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -959,6 +947,16 @@ fun HomeScreen(
             }
         }
 
+        // Full-Screen App Startup Splash Image Overlay (Eliminates blank startup screen)
+        AnimatedVisibility(
+            visible = isAppStartupSplashVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            StartupSplashOverlay(statusMessage = activeBackendStatus)
+        }
+
         // Dialogs
         if (isSettingsOpen) {
             PlaylistSettingsDialog(
@@ -1013,10 +1011,205 @@ fun HomeScreen(
 }
 
 @Composable
+private fun StartupSplashOverlay(
+    statusMessage: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF0A110F))
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.nokshi_flash_banner),
+            contentDescription = "Nokshi IP TV Splash",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0x33000000),
+                            Color(0xDD08100E)
+                        )
+                    )
+                )
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 36.dp, start = 24.dp, end = 24.dp)
+        ) {
+            CircularProgressIndicator(
+                color = Color(0xFFFF9800),
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Nokshi IP TV",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = statusMessage,
+                color = Color(0xFFFFCC80),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvBackendProcessPanel(
+    activeStatus: String,
+    isBusy: Boolean,
+    logs: List<BackendLogEntry>,
+    sleepTimerSeconds: Int,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF131D1A),
+        border = BorderStroke(1.dp, Color(0xFF233631)),
+        modifier = modifier.testTag("tv_backend_process_panel")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            // Header bar with live activity indicator
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Terminal,
+                    contentDescription = null,
+                    tint = Color(0xFF80CBC4),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "ব্যাকএন্ড প্রসেস স্ট্যাটাস",
+                    color = Color(0xFF80CBC4),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                if (sleepTimerSeconds > 0) {
+                    Text(
+                        text = "স্লিপ: ${sleepTimerSeconds / 60}m ${sleepTimerSeconds % 60}s",
+                        color = Color(0xFFFFCC80),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        color = Color(0xFFFF9800),
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(12.dp)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676))
+                    )
+                }
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = if (isBusy) "প্রসেসিং..." else "সচল",
+                    color = if (isBusy) Color(0xFFFFB74D) else Color(0xFF00E676),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Highlighted current backend action
+            Text(
+                text = activeStatus,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            HorizontalDivider(
+                color = Color(0xFF20312C),
+                thickness = 1.dp,
+                modifier = Modifier.padding(vertical = 5.dp)
+            )
+
+            // Recent live backend process logs (non-focusable so TV D-pad stays on controls/cards)
+            LazyColumn(
+                userScrollEnabled = false,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(logs.take(6), key = { it.id }) { item ->
+                    val dotColor = when (item.level) {
+                        BackendLogLevel.SUCCESS -> Color(0xFF00E676)
+                        BackendLogLevel.WORKING -> Color(0xFFFFB300)
+                        BackendLogLevel.WARNING -> Color(0xFFFF7043)
+                        BackendLogLevel.INFO -> Color(0xFF80CBC4)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = item.time,
+                            color = Color(0xFF68867E),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(dotColor)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = item.message,
+                            color = Color(0xFFB8CFC9),
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FullScreenButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    onRightKeyPressed: (() -> Boolean)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -1035,8 +1228,17 @@ private fun FullScreenButton(
         ),
         modifier = modifier
             .scale(scale)
+            .onPreviewKeyEvent { keyEvent ->
+                if (onRightKeyPressed != null &&
+                    keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+                ) {
+                    onRightKeyPressed()
+                } else {
+                    false
+                }
+            }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -1063,8 +1265,6 @@ private fun FullScreenButton(
     }
 }
 
-// User requirement 4:
-// "M3U প্লেলিস্টের আন্ডারে থাকা বিভিন্ন গ্রুপের মাঝে নেভিগেট করতে গেলে কোন গ্রুপ সিলেক্ট করতে যাচ্ছি তা বোঝা যায়না। অন্য থাম্বনেইলের মতো বাদামী বর্ডার দিয়ে দেন।"
 @Composable
 private fun TvGroupChip(
     text: String,
@@ -1080,9 +1280,8 @@ private fun TvGroupChip(
         label = "group_chip_scale"
     )
 
-    // Distinct Amber / Brown border on D-pad TV focus, matching channel thumbnails
     val borderColor = when {
-        isFocused -> Color(0xFFFF9800) // Vibrant TV focus amber / brown
+        isFocused -> Color(0xFFFF9800)
         isSelected -> Color(0xFFFFB300)
         else -> Color(0x33FFFFFF)
     }
@@ -1091,14 +1290,14 @@ private fun TvGroupChip(
 
     val containerColor = when {
         isFocused && isSelected -> Color(0xFFFF9800)
-        isFocused -> Color(0xFF2D2319) // Warm dark brown focus container
+        isFocused -> Color(0xFF2D2319)
         isSelected -> Color(0xFFFF9800)
         else -> Color(0xFF1B2825)
     }
 
     val textColor = when {
         isSelected -> Color.Black
-        isFocused -> Color(0xFFFFD54F) // Bright amber text on focus
+        isFocused -> Color(0xFFFFD54F)
         else -> Color(0xFFE0F2F1)
     }
 
@@ -1108,7 +1307,6 @@ private fun TvGroupChip(
         border = BorderStroke(borderWidth, borderColor),
         modifier = modifier
             .scale(scale)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -1150,7 +1348,6 @@ private fun TvActionButton(
         ),
         modifier = modifier
             .scale(scale)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -1215,7 +1412,6 @@ private fun TvTabButton(
         ),
         modifier = modifier
             .scale(scale)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -1244,5 +1440,3 @@ private fun TvTabButton(
         }
     }
 }
-
-

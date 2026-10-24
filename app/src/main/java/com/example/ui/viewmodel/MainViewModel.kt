@@ -18,21 +18,73 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
+enum class BackendLogLevel {
+    INFO, WORKING, SUCCESS, WARNING
+}
+
+data class BackendLogEntry(
+    val id: Long,
+    val time: String,
+    val message: String,
+    val level: BackendLogLevel = BackendLogLevel.INFO
+)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val repository = ChannelRepository(application)
 
+    private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("Asia/Dhaka")
+    }
+    private var logSequence = 0L
+
+    private val _backendLogs = MutableStateFlow<List<BackendLogEntry>>(emptyList())
+    val backendLogs: StateFlow<List<BackendLogEntry>> = _backendLogs.asStateFlow()
+
+    private val _activeBackendStatus = MutableStateFlow("অ্যাপ চালু হচ্ছে...")
+    val activeBackendStatus: StateFlow<String> = _activeBackendStatus.asStateFlow()
+
+    private val _isBackendBusy = MutableStateFlow(true)
+    val isBackendBusy: StateFlow<Boolean> = _isBackendBusy.asStateFlow()
+
+    // App startup full-screen splash image state (disappears once app & initial channel list are ready)
+    private val _isAppStartupSplashVisible = MutableStateFlow(true)
+    val isAppStartupSplashVisible: StateFlow<Boolean> = _isAppStartupSplashVisible.asStateFlow()
+
+    private fun appendBackendLog(
+        message: String,
+        level: BackendLogLevel = BackendLogLevel.INFO,
+        isBusy: Boolean? = null
+    ) {
+        val now = synchronized(timeFormatter) { timeFormatter.format(Date()) }
+        val entry = BackendLogEntry(
+            id = ++logSequence,
+            time = now,
+            message = message,
+            level = level
+        )
+        _activeBackendStatus.value = message
+        if (isBusy != null) {
+            _isBackendBusy.value = isBusy
+        }
+        _backendLogs.value = (listOf(entry) + _backendLogs.value).take(25)
+    }
+
     // User requirement: "ইউটিউব চ্যানেল display_order অনুযায়ী sort করবেন।"
     val youtubeChannels: StateFlow<List<Channel>> = repository.getYouTubeChannels()
         .map { list -> list.sortedWith(compareBy({ it.displayOrder }, { it.id })) }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val m3uChannels: StateFlow<List<Channel>> = repository.getM3uChannels()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val favoriteChannels: StateFlow<List<Channel>> = repository.getFavoriteChannels()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val playlists: StateFlow<List<Playlist>> = repository.getPlaylists()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -54,7 +106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentChannel = MutableStateFlow<Channel?>(null)
     val currentChannel: StateFlow<Channel?> = _currentChannel.asStateFlow()
 
-    private val _isFlashBannerVisible = MutableStateFlow(false)
+    private val _isFlashBannerVisible = MutableStateFlow(true)
     val isFlashBannerVisible: StateFlow<Boolean> = _isFlashBannerVisible.asStateFlow()
 
     private val _isFullscreen = MutableStateFlow(false)
@@ -93,24 +145,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _settingsLoading = MutableStateFlow(false)
     val settingsLoading: StateFlow<Boolean> = _settingsLoading.asStateFlow()
 
-    private var bannerTimeoutJob: Job? = null
-    private var consecutiveFailures = 0
+    private var isPlaybackStarted = false
+    private var loadingWatchdogJob: Job? = null
 
     init {
         _activeTab.value = repository.preferences.lastSelectedTab
+        appendBackendLog("অ্যাপ চালু হয়েছে — লোকাল চ্যানেল ডাটাবেজ প্রস্তুত হচ্ছে...", BackendLogLevel.WORKING, isBusy = true)
 
         viewModelScope.launch {
-            // Initialize bundled channels
-            repository.initializeChannelsIfEmpty()
+            val count = repository.initializeChannelsIfEmpty()
+            appendBackendLog("লোকাল ডাটাবেজ প্রস্তুত ($count টি চ্যানেল পাওয়া গেছে)", BackendLogLevel.INFO, isBusy = true)
 
-            // Run async server check without blocking UI
-            checkServer()
+            // Wait briefly if Room Flow is emitting initial items, then dismiss full-screen startup splash
+            var waitedMs = 0
+            while (youtubeChannels.value.isEmpty() && m3uChannels.value.isEmpty() && waitedMs < 1800) {
+                delay(100)
+                waitedMs += 100
+            }
+            delay(350)
+            _isAppStartupSplashVisible.value = false
+
+            // Run async server check & MySQL display_order sync
+            checkServer(forceUpdate = false)
         }
 
         // Auto select first channel when channels load if none selected
         viewModelScope.launch {
             youtubeChannels.collect { list ->
-                if (_activeTab.value == "YOUTUBE" && _currentChannel.value == null && list.isNotEmpty()) {
+                if (_activeTab.value == "YOUTUBE") {
+                    val cur = _currentChannel.value
+                    if (cur == null && list.isNotEmpty()) {
+                        selectChannel(list.first())
+                    } else if (cur != null) {
+                        // Refresh current channel metadata (updated streamUrl/name/poster after server sync) without interrupting active stream if URL unchanged
+                        val updated = list.find { it.id == cur.id }
+                        if (updated != null && updated.streamUrl != cur.streamUrl) {
+                            selectChannel(updated)
+                        } else if (updated != null) {
+                            _currentChannel.value = updated
+                        }
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            m3uChannels.collect { list ->
+                if (_activeTab.value == "M3U" && _currentChannel.value == null && list.isNotEmpty()) {
                     selectChannel(list.first())
                 }
             }
@@ -121,9 +202,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _activeTab.value = tab
         repository.preferences.lastSelectedTab = tab
         _selectedGroup.value = null
-        _m3uVisibleLimit.value = 80 // Reset lazy load window
+        _m3uVisibleLimit.value = 80
 
-        // Select first channel in new tab if available
+        val tabLabel = when (tab) {
+            "YOUTUBE" -> "YouTube লাইভ"
+            "M3U" -> "M3U প্লেলিস্ট"
+            "FAVORITES" -> "প্রিয় চ্যানেল"
+            else -> tab
+        }
+        appendBackendLog("ট্যাব পরিবর্তন: $tabLabel নির্বাচন করা হয়েছে", BackendLogLevel.INFO)
+
         val channels = when (tab) {
             "YOUTUBE" -> youtubeChannels.value
             "M3U" -> m3uChannels.value
@@ -137,36 +225,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSelectedGroup(group: String?) {
         _selectedGroup.value = group
-        _m3uVisibleLimit.value = 80 // Reset lazy load window on category switch
+        _m3uVisibleLimit.value = 80
+        appendBackendLog("গ্রুপ ফিল্টার: ${group ?: "সকল চ্যানেল"}", BackendLogLevel.INFO)
     }
 
-    private var isPlaybackStarted = false
-    private var loadingWatchdogJob: Job? = null
-
     fun selectChannel(channel: Channel) {
-        if (_currentChannel.value?.id == channel.id && !_isFlashBannerVisible.value) {
+        if (_currentChannel.value?.id == channel.id &&
+            _currentChannel.value?.streamUrl == channel.streamUrl &&
+            isPlaybackStarted
+        ) {
             return
         }
 
         _currentChannel.value = channel
+        // Keep splash image (FlashBanner) visible until actual video frames start playing!
         _isFlashBannerVisible.value = true
         isPlaybackStarted = false
 
-        bannerTimeoutJob?.cancel()
-        bannerTimeoutJob = viewModelScope.launch {
-            // Flash banner displays for 1.5 seconds during transition
-            delay(1500)
-            _isFlashBannerVisible.value = false
-        }
+        val streamKind = if (channel.type == ChannelType.YOUTUBE) "YouTube Live" else "M3U8 HLS"
+        appendBackendLog(
+            "চ্যানেল লোড হচ্ছে: ${channel.name} [$streamKind]...",
+            BackendLogLevel.WORKING,
+            isBusy = true
+        )
 
-        // TV / Mobile Watchdog:
-        // Give the video up to 10 seconds to buffer/initiate before auto-switching.
-        // Once playback starts, isPlaybackStarted = true cancels this watchdog and mid-stream buffering never switches.
+        // Give stream up to 12 seconds to start playing before switching to next channel.
+        // Once playback starts, isPlaybackStarted = true cancels this watchdog so mid-stream buffering never switches.
         loadingWatchdogJob?.cancel()
         loadingWatchdogJob = viewModelScope.launch {
-            delay(10000) // 10 seconds safe window for TV network loading
+            delay(12000)
             if (!isPlaybackStarted) {
-                Log.w("MainViewModel", "Channel ${channel.name} failed to load within 10s. Auto-switching to next channel.")
+                Log.w("MainViewModel", "Channel ${channel.name} failed to load within 12s. Auto-switching.")
+                appendBackendLog(
+                    "${channel.name} নির্দিষ্ট সময়ে লোড হয়নি — পরবর্তী চ্যানেলে সুইচ করা হচ্ছে...",
+                    BackendLogLevel.WARNING,
+                    isBusy = true
+                )
                 _serverSyncState.value = ServerSyncState.Notice("${channel.name} লোড হতে বিলম্বিত, পরবর্তী চ্যানেলে যাওয়া হচ্ছে...")
                 playNextChannel()
             }
@@ -174,26 +268,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onPlaybackStarted() {
+        if (isPlaybackStarted && !_isFlashBannerVisible.value) return
         isPlaybackStarted = true
         loadingWatchdogJob?.cancel()
-        bannerTimeoutJob?.cancel()
         _isFlashBannerVisible.value = false
-        consecutiveFailures = 0
+
+        val chName = _currentChannel.value?.name ?: "চ্যানেল"
+        appendBackendLog(
+            "লাইভ চলছে: $chName (ভিডিও ও সাউন্ড সচল)",
+            BackendLogLevel.SUCCESS,
+            isBusy = false
+        )
     }
 
     fun onPlaybackError(error: String) {
         Log.e("MainViewModel", "Playback error for current channel: $error")
-        // User requirement: "কোন চ্যানেল একবার চালু হবার পর মাঝ পথে আটকে গেলে আর সুইচ করবে না।"
+        val chName = _currentChannel.value?.name ?: "চ্যানেল"
         if (!isPlaybackStarted) {
+            appendBackendLog(
+                "$chName স্ট্রিম ত্রুটি ($error) — পরবর্তী চ্যানেলে যাওয়া হচ্ছে",
+                BackendLogLevel.WARNING,
+                isBusy = true
+            )
             handlePlaybackFailure()
         } else {
-            // Channel had started playing before, so do NOT switch channel
+            // Once a channel has started playing, never auto-switch on mid-stream hiccup
+            appendBackendLog(
+                "$chName সাময়িক বাফারিং হচ্ছে...",
+                BackendLogLevel.WARNING,
+                isBusy = false
+            )
             _serverSyncState.value = ServerSyncState.Notice("ভিডিওটি বাফারিং বা সাময়িক বিলম্বিত হচ্ছে...")
         }
     }
 
     private fun handlePlaybackFailure() {
-        _isFlashBannerVisible.value = false
         loadingWatchdogJob?.cancel()
         playNextChannel()
     }
@@ -221,6 +330,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (_currentChannel.value?.id == channel.id) {
                 _currentChannel.value = channel.copy(isFavorite = newFav)
             }
+            appendBackendLog(
+                if (newFav) "ফেভারিট তালিকায় যুক্ত: ${channel.name}" else "ফেভারিট থেকে সরানো হয়েছে: ${channel.name}",
+                BackendLogLevel.INFO
+            )
         }
     }
 
@@ -251,6 +364,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _pinLoading.value = true
             _pinError.value = null
+            appendBackendLog("সার্ভারে ওয়ান-টাইম পিন যাচাই করা হচ্ছে...", BackendLogLevel.WORKING, isBusy = true)
 
             val result = repository.verifyPin(pin)
             _pinLoading.value = false
@@ -258,9 +372,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (result.isSuccess && result.getOrNull() == true) {
                 _isPinDialogOpen.value = false
                 _settingsStatus.value = "পিন সফলভাবে যাচাই করা হয়েছে! বিল্ট-ইন M3U লোড হচ্ছে..."
+                appendBackendLog("পিন যাচাই সফল! বিল্ট-ইন M3U ডাউনলোড শুরু...", BackendLogLevel.SUCCESS, isBusy = true)
                 loadBuiltInM3u()
             } else {
-                _pinError.value = result.exceptionOrNull()?.message ?: "ভুল পিন নম্বর!"
+                val err = result.exceptionOrNull()?.message ?: "ভুল পিন নম্বর!"
+                _pinError.value = err
+                appendBackendLog("পিন যাচাই ব্যর্থ: $err", BackendLogLevel.WARNING, isBusy = false)
             }
         }
     }
@@ -274,15 +391,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _settingsLoading.value = true
             _settingsStatus.value = "বিল্ট-ইন M3U ডাউনলোড হচ্ছে..."
+            appendBackendLog("বিল্ট-ইন M3U প্লেলিস্ট সার্ভার থেকে ডাউনলোড হচ্ছে...", BackendLogLevel.WORKING, isBusy = true)
             val result = repository.loadBuiltInM3u()
             _settingsLoading.value = false
 
             if (result.isSuccess) {
                 val count = result.getOrNull() ?: 0
                 _settingsStatus.value = "সফলভাবে $count টি চ্যানেল লোড হয়েছে!"
+                appendBackendLog("বিল্ট-ইন M3U লোড সম্পন্ন ($count টি চ্যানেল)", BackendLogLevel.SUCCESS, isBusy = false)
                 setActiveTab("M3U")
             } else {
-                _settingsStatus.value = result.exceptionOrNull()?.message ?: "M3U লোড ব্যর্থ"
+                val err = result.exceptionOrNull()?.message ?: "M3U লোড ব্যর্থ"
+                _settingsStatus.value = err
+                appendBackendLog("M3U ডাউনলোড ব্যর্থ: $err", BackendLogLevel.WARNING, isBusy = false)
             }
         }
     }
@@ -291,15 +412,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _settingsLoading.value = true
             _settingsStatus.value = "কাস্টম M3U ডাউনলোড হচ্ছে..."
+            appendBackendLog("কাস্টম M3U ($name) ডাউনলোড হচ্ছে...", BackendLogLevel.WORKING, isBusy = true)
             val result = repository.loadCustomM3u(url, name)
             _settingsLoading.value = false
 
             if (result.isSuccess) {
                 val count = result.getOrNull() ?: 0
                 _settingsStatus.value = "সফলভাবে $count টি চ্যানেল লোড হয়েছে!"
+                appendBackendLog("কাস্টম M3U লোড সম্পন্ন ($count টি চ্যানেল)", BackendLogLevel.SUCCESS, isBusy = false)
                 setActiveTab("M3U")
             } else {
-                _settingsStatus.value = result.exceptionOrNull()?.message ?: "M3U লোড ব্যর্থ"
+                val err = result.exceptionOrNull()?.message ?: "M3U লোড ব্যর্থ"
+                _settingsStatus.value = err
+                appendBackendLog("কাস্টম M3U ত্রুটি: $err", BackendLogLevel.WARNING, isBusy = false)
             }
         }
     }
@@ -308,15 +433,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _settingsLoading.value = true
             _settingsStatus.value = "Xtream সার্ভার কানেক্ট হচ্ছে..."
+            appendBackendLog("Xtream সার্ভার সংযোগ করা হচ্ছে...", BackendLogLevel.WORKING, isBusy = true)
             val result = repository.loadXtream(server, user, pass)
             _settingsLoading.value = false
 
             if (result.isSuccess) {
                 val count = result.getOrNull() ?: 0
                 _settingsStatus.value = "সফলভাবে $count টি Xtream চ্যানেল লোড হয়েছে!"
+                appendBackendLog("Xtream লোড সম্পন্ন ($count টি চ্যানেল)", BackendLogLevel.SUCCESS, isBusy = false)
                 setActiveTab("M3U")
             } else {
-                _settingsStatus.value = result.exceptionOrNull()?.message ?: "Xtream কানেকশন ব্যর্থ"
+                val err = result.exceptionOrNull()?.message ?: "Xtream কানেকশন ব্যর্থ"
+                _settingsStatus.value = err
+                appendBackendLog("Xtream সংযোগ ব্যর্থ: $err", BackendLogLevel.WARNING, isBusy = false)
             }
         }
     }
@@ -324,11 +453,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deletePlaylist(id: Long) {
         viewModelScope.launch {
             repository.deletePlaylist(id)
+            appendBackendLog("প্লেলিস্ট মুছে ফেলা হয়েছে", BackendLogLevel.INFO)
         }
     }
 
     fun setBackgroundAudio(enabled: Boolean) {
         repository.preferences.isBackgroundAudioEnabled = enabled
+        appendBackendLog(
+            if (enabled) "ব্যাকগ্রাউন্ড অডিও পাওয়ার ম্যানেজমেন্ট চালু" else "ব্যাকগ্রাউন্ড অডিও বন্ধ",
+            BackendLogLevel.INFO
+        )
     }
 
     // Sleep Timer
@@ -336,17 +470,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cancelSleepTimer()
         val totalSeconds = minutes * 60
         _sleepTimerSeconds.value = totalSeconds
+        appendBackendLog("স্লিপ টাইমার চালু করা হয়েছে: $minutes মিনিট", BackendLogLevel.INFO)
 
         sleepTimerJob = viewModelScope.launch {
             while (_sleepTimerSeconds.value > 0) {
                 delay(1000)
                 _sleepTimerSeconds.value -= 1
             }
-            // Expired -> Will be handled in Activity via StateFlow collection
         }
     }
 
     fun cancelSleepTimer() {
+        if (_sleepTimerSeconds.value > 0) {
+            appendBackendLog("স্লিপ টাইমার বাতিল করা হয়েছে", BackendLogLevel.INFO)
+        }
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         _sleepTimerSeconds.value = 0
@@ -354,14 +491,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkServer(forceUpdate: Boolean = false) {
         viewModelScope.launch {
-            _serverSyncState.value = ServerSyncState.Checking("সার্ভার চেক: তারিখ ও লাইভ স্ট্রিম স্থিতি যাচাই করা হচ্ছে...")
+            val initMsg = if (forceUpdate) {
+                "সার্ভার ফোর্স আপডেট ও লাইভ স্ট্রিম চেক শুরু..."
+            } else {
+                "সার্ভার তারিখ (reDirectLog.txt) ও চ্যানেল সিঙ্ক যাচাই হচ্ছে..."
+            }
+            _serverSyncState.value = ServerSyncState.Checking(initMsg)
+            appendBackendLog(initMsg, BackendLogLevel.WORKING, isBusy = true)
+
             val result = repository.checkServerSync(forceUpdate) { msg ->
                 _serverSyncState.value = ServerSyncState.Updating(msg)
+                appendBackendLog(msg, BackendLogLevel.WORKING, isBusy = true)
             }
             if (result.isSuccess) {
-                _serverSyncState.value = ServerSyncState.Success(result.getOrNull() ?: "হালনাগাদ সম্পন্ন")
+                val (statusText, syncedCount) = result.getOrNull() ?: ("হালনাগাদ সম্পন্ন" to 0)
+                val summary = if (syncedCount > 0) {
+                    "$statusText | MySQL সিঙ্ক: $syncedCount টি চ্যানেল (display_order)"
+                } else {
+                    statusText
+                }
+                _serverSyncState.value = ServerSyncState.Success(summary)
+                appendBackendLog(summary, BackendLogLevel.SUCCESS, isBusy = !isPlaybackStarted)
             } else {
-                _serverSyncState.value = ServerSyncState.Notice(result.exceptionOrNull()?.message ?: "অফলাইন/ক্যাশে ডেটা দিয়ে চলছে")
+                val errMsg = result.exceptionOrNull()?.message ?: "অফলাইন/ক্যাশে ডেটা দিয়ে চলছে"
+                _serverSyncState.value = ServerSyncState.Notice(errMsg)
+                appendBackendLog("সার্ভার নোটিশ: $errMsg", BackendLogLevel.WARNING, isBusy = !isPlaybackStarted)
             }
             delay(4000)
             if (_serverSyncState.value !is ServerSyncState.Updating) {
@@ -386,7 +540,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return if (_activeTab.value == "YOUTUBE") {
             filtered.sortedWith(compareBy({ it.displayOrder }, { it.id }))
         } else if (_activeTab.value == "M3U") {
-            // User requirement: "m3u তে যেহেতু অনেক চ্যানেল থাকবে তাই Lazy Load টেকনোলোজি ব্যবহার করবেন।"
             filtered.take(_m3uVisibleLimit.value)
         } else {
             filtered

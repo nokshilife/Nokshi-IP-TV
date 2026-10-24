@@ -62,6 +62,17 @@
       return "https://bcs24admin.org.bd";
     }
 
+    function ensureUnmuted(target) {
+      try {
+        if (target && typeof target.unMute === 'function') {
+          target.unMute();
+        }
+        if (target && typeof target.setVolume === 'function') {
+          target.setVolume(100);
+        }
+      } catch (e) {}
+    }
+
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
         videoId: videoId,
@@ -96,25 +107,24 @@
         }
       } catch (e) {}
 
-      // Attempt unmuted play first
+      // Always play with full sound — never mute
+      ensureUnmuted(event.target);
       try {
         event.target.playVideo();
       } catch (e) {}
 
-      // Autoplay fallback for TV browser policy restrictions:
-      // If unmuted playback is blocked by TV Chromium autoplay policy,
-      // fallback to muted playback so stream starts immediately
+      // Retry unmuted play if network/iframe needed an extra moment
       setTimeout(function() {
         if (!startedReported && player) {
           try {
+            ensureUnmuted(player);
             var state = player.getPlayerState();
-            if (state !== 1 && state !== 3) {
-              player.mute();
+            if (state !== 1) {
               player.playVideo();
             }
           } catch(e) {}
         }
-      }, 2500);
+      }, 2000);
     }
 
     function onPlayerError(event) {
@@ -126,13 +136,20 @@
     }
 
     function onPlayerStateChange(event) {
-      // 1 = PLAYING, 3 = BUFFERING
-      if ((event.data === 1 || event.data === 3) && !startedReported) {
-        startedReported = true;
-        if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null; }
-        if (bridge) {
-          if (bridge.onYoutubeStarted) bridge.onYoutubeStarted();
-          else if (bridge.onPlaying) bridge.onPlaying();
+      if (event.data === 1) {
+        // 1 = PLAYING (actual video playback started, NOT buffering)
+        ensureUnmuted(event.target);
+        if (!startedReported) {
+          startedReported = true;
+          if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null; }
+          setTimeout(function() {
+            ensureUnmuted(event.target);
+            if (bridge) {
+              if (bridge.onActualVideoPlaying) bridge.onActualVideoPlaying();
+              else if (bridge.onYoutubeStarted) bridge.onYoutubeStarted();
+              else if (bridge.onPlaying) bridge.onPlaying();
+            }
+          }, 300);
         }
       }
     }

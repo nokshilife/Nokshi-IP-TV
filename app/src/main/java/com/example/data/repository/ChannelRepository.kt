@@ -51,7 +51,7 @@ class ChannelRepository(private val context: Context) {
             list.map { it.toDomain() }
         }
 
-    suspend fun initializeChannelsIfEmpty() = withContext(Dispatchers.IO) {
+    suspend fun initializeChannelsIfEmpty(): Int = withContext(Dispatchers.IO) {
         val ytCount = channelDao.getChannelCountByType(ChannelType.YOUTUBE.name)
         if (ytCount == 0) {
             Log.d("ChannelRepo", "Loading bundled default YouTube channels...")
@@ -64,6 +64,11 @@ class ChannelRepository(private val context: Context) {
 
                     for (i in 0 until jsonArray.length()) {
                         val obj = jsonArray.getJSONObject(i)
+                        val displayOrder = if (obj.has("display_order")) {
+                            obj.optInt("display_order", i)
+                        } else {
+                            obj.optInt("displayOrder", i)
+                        }
                         entities.add(
                             ChannelEntity(
                                 id = obj.getInt("id"),
@@ -75,18 +80,21 @@ class ChannelRepository(private val context: Context) {
                                 groupTitle = "YouTube Live",
                                 category = obj.getInt("category"),
                                 isActive = obj.getBoolean("isActive"),
-                                displayOrder = obj.getInt("displayOrder"),
+                                displayOrder = displayOrder,
                                 isFavorite = false
                             )
                         )
                     }
-                    channelDao.insertChannels(entities)
-                    Log.d("ChannelRepo", "Inserted ${entities.size} default YouTube channels")
+                    val sorted = entities.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+                    channelDao.insertChannels(sorted)
+                    Log.d("ChannelRepo", "Inserted ${sorted.size} default YouTube channels")
+                    return@withContext sorted.size
                 }
             } catch (e: Exception) {
                 Log.e("ChannelRepo", "Error loading bundled channels: ${e.message}", e)
             }
         }
+        ytCount
     }
 
     suspend fun toggleFavorite(channelId: Int, isFavorite: Boolean) = withContext(Dispatchers.IO) {
@@ -110,8 +118,11 @@ class ChannelRepository(private val context: Context) {
         if (result.isSuccess) {
             val channels = result.getOrNull() ?: emptyList()
             if (channels.isNotEmpty()) {
+                val favIds = channelDao.getFavoriteChannelIds().toSet()
                 channelDao.deleteChannelsByType(ChannelType.M3U.name)
-                channelDao.insertChannels(channels.map { ChannelEntity.fromDomain(it) })
+                channelDao.insertChannels(
+                    channels.map { ChannelEntity.fromDomain(it.copy(isFavorite = it.id in favIds)) }
+                )
             }
             Result.success(channels.size)
         } else {
@@ -124,10 +135,12 @@ class ChannelRepository(private val context: Context) {
         if (result.isSuccess) {
             val channels = result.getOrNull() ?: emptyList()
             if (channels.isNotEmpty()) {
+                val favIds = channelDao.getFavoriteChannelIds().toSet()
                 channelDao.deleteChannelsByType(ChannelType.M3U.name)
-                channelDao.insertChannels(channels.map { ChannelEntity.fromDomain(it) })
+                channelDao.insertChannels(
+                    channels.map { ChannelEntity.fromDomain(it.copy(isFavorite = it.id in favIds)) }
+                )
             }
-            // Save playlist
             playlistDao.insertPlaylist(
                 PlaylistEntity(
                     name = name,
@@ -155,8 +168,11 @@ class ChannelRepository(private val context: Context) {
         if (result.isSuccess) {
             val channels = result.getOrNull() ?: emptyList()
             if (channels.isNotEmpty()) {
+                val favIds = channelDao.getFavoriteChannelIds().toSet()
                 channelDao.deleteChannelsByType(ChannelType.M3U.name)
-                channelDao.insertChannels(channels.map { ChannelEntity.fromDomain(it) })
+                channelDao.insertChannels(
+                    channels.map { ChannelEntity.fromDomain(it.copy(isFavorite = it.id in favIds)) }
+                )
             }
             playlistDao.insertPlaylist(
                 PlaylistEntity(
@@ -180,20 +196,34 @@ class ChannelRepository(private val context: Context) {
         if (result.isSuccess) {
             val list = result.getOrNull() ?: emptyList()
             if (list.isNotEmpty()) {
+                val favIds = channelDao.getFavoriteChannelIds().toSet()
+                val sorted = list.sortedWith(compareBy({ it.displayOrder }, { it.id }))
                 channelDao.deleteChannelsByType(ChannelType.YOUTUBE.name)
-                channelDao.insertChannels(list.map { ChannelEntity.fromDomain(it) })
-                Log.d("ChannelRepo", "Synced ${list.size} channels from MySQL server API")
-                return@withContext Result.success(list.size)
+                channelDao.insertChannels(
+                    sorted.map { ChannelEntity.fromDomain(it.copy(isFavorite = it.id in favIds)) }
+                )
+                Log.d("ChannelRepo", "Synced ${sorted.size} channels from MySQL server API")
+                return@withContext Result.success(sorted.size)
             }
         }
         Result.failure(result.exceptionOrNull() ?: Exception("No channels returned from server"))
     }
 
-    suspend fun checkServerSync(forceUpdate: Boolean = false, onUpdating: (String) -> Unit): Result<String> {
+    suspend fun checkServerSync(
+        forceUpdate: Boolean = false,
+        onUpdating: (String) -> Unit
+    ): Result<Pair<String, Int>> {
         val checkResult = serverCheckService.performServerCheck(forceUpdate, onUpdating)
-        // Also attempt live channels sync from MySQL
-        syncChannelsWithServer()
-        return checkResult
+        onUpdating("MySQL ডাটাবেজ থেকে চ্যানেল ও display_order সিঙ্ক হচ্ছে...")
+        val syncRes = syncChannelsWithServer()
+        val syncedCount = syncRes.getOrElse { 0 }
+        return if (checkResult.isSuccess) {
+            Result.success(Pair(checkResult.getOrNull() ?: "হালনাগাদ সম্পন্ন", syncedCount))
+        } else if (syncedCount > 0) {
+            Result.success(Pair("সার্ভার থেকে $syncedCount টি চ্যানেল সিঙ্ক সম্পন্ন", syncedCount))
+        } else {
+            Result.failure(checkResult.exceptionOrNull() ?: Exception("সার্ভার সংযোগ ব্যর্থ"))
+        }
     }
 
     suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {

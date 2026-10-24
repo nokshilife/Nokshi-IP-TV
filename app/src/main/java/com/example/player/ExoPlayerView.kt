@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,10 +35,13 @@ fun ExoPlayerView(
     onDoubleTap: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val currentOnStarted by rememberUpdatedState(onPlaybackStarted)
+    val currentOnError by rememberUpdatedState(onPlaybackError)
 
     val exoPlayer = remember(context) {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
+            volume = 1.0f
             // Power management: keep network & CPU awake for continuous background audio
             setWakeMode(C.WAKE_MODE_NETWORK)
         }
@@ -44,20 +49,27 @@ fun ExoPlayerView(
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
-                    onPlaybackStarted()
-                }
+            override fun onRenderedFirstFrame() {
+                // Only dismiss splash banner once the first actual video frame is drawn on screen!
+                exoPlayer.volume = 1.0f
+                currentOnStarted()
             }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    onPlaybackStarted()
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // Fallback for audio-only radio/HLS streams that have no video track
+                if (playbackState == Player.STATE_READY && exoPlayer.playWhenReady) {
+                    val hasVideoTrack = exoPlayer.currentTracks.groups.any { group ->
+                        group.type == C.TRACK_TYPE_VIDEO && group.isSelected
+                    }
+                    if (!hasVideoTrack) {
+                        exoPlayer.volume = 1.0f
+                        currentOnStarted()
+                    }
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                onPlaybackError(error.message ?: "Playback error")
+                currentOnError(error.message ?: "M3U8 playback error")
             }
         }
         exoPlayer.addListener(listener)
@@ -71,6 +83,7 @@ fun ExoPlayerView(
 
     LaunchedEffect(streamUrl) {
         if (streamUrl.isNotEmpty()) {
+            exoPlayer.volume = 1.0f
             val mediaItem = MediaItem.fromUri(streamUrl)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
@@ -97,7 +110,7 @@ fun ExoPlayerView(
                     )
                     // Requirement: Remove default controls for a fresh, clean player
                     useController = false
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                 }
             },
             modifier = Modifier.fillMaxSize()

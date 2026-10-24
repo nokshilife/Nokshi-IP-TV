@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#0F1715" />
+        </shape>
+    </item>
+    <item
+        android:width="280dp"
+        android:height="158dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/nokshi_flash_banner" />
+    </item>
+</layer-list>
