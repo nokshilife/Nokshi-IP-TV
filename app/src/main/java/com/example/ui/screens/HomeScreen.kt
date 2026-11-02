@@ -102,19 +102,15 @@ import com.example.ui.components.ExitConfirmationDialog
 import com.example.ui.components.FlashBanner
 import com.example.ui.components.PinVerificationDialog
 import com.example.ui.components.PlaylistSettingsDialog
+import com.example.ui.components.SciFiBackendHudPanel
 import com.example.ui.components.SleepTimerDialog
 import com.example.ui.components.TvFocusCard
-import com.example.ui.viewmodel.BackendLogEntry
-import com.example.ui.viewmodel.BackendLogLevel
 import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// Vibrant Bright Leaf-Green / Banana-Leaf Palette for Backend Process Status Box
+// Vibrant Bright Leaf-Green Accent
 private val LeafGreenBright = Color(0xFF76FF03)
-private val LeafGreenPrimary = Color(0xFF84FF33)
-private val LeafGreenTime = Color(0xFF5EEB1C)
-private val LeafGreenHeader = Color(0xFFAEEA00)
 
 @Composable
 fun HomeScreen(
@@ -493,12 +489,19 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Backend Process Monitor Panel (Bright Banana-Leaf Green Console!)
-                    TvBackendProcessPanel(
+                    // Sci-Fi Cinematic Backend Process Telemetry HUD Panel
+                    val activeEngineLabel = when (currentChannel?.type) {
+                        ChannelType.YOUTUBE -> "YT-IFRAME"
+                        ChannelType.M3U -> "MEDIA3-HLS"
+                        null -> "STANDBY"
+                    }
+                    SciFiBackendHudPanel(
                         activeStatus = activeBackendStatus,
                         isBusy = isBackendBusy,
                         logs = backendLogs,
                         sleepTimerSeconds = sleepTimerSeconds,
+                        engineLabel = activeEngineLabel,
+                        channelCount = visibleChannels.size,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -1082,147 +1085,6 @@ private fun StartupSplashOverlay(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-        }
-    }
-}
-
-/**
- * Backend Process Status Box — styled in vibrant banana-leaf / bright green (#76FF03)
- * and displaying every real programming-level stage during channel switching & playback.
- */
-@Composable
-private fun TvBackendProcessPanel(
-    activeStatus: String,
-    isBusy: Boolean,
-    logs: List<BackendLogEntry>,
-    sleepTimerSeconds: Int,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF09120B),
-        border = BorderStroke(1.dp, Color(0xFF285429)),
-        modifier = modifier.testTag("tv_backend_process_panel")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 7.dp)
-        ) {
-            // Header bar in bright banana-leaf green
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Terminal,
-                    contentDescription = null,
-                    tint = LeafGreenBright,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "ব্যাকএন্ড প্রসেস স্ট্যাটাস",
-                    color = LeafGreenHeader,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                if (sleepTimerSeconds > 0) {
-                    Text(
-                        text = "স্লিপ: ${sleepTimerSeconds / 60}m ${sleepTimerSeconds % 60}s",
-                        color = LeafGreenBright,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                }
-                if (isBusy) {
-                    CircularProgressIndicator(
-                        color = LeafGreenBright,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(12.dp)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(LeafGreenBright)
-                    )
-                }
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = if (isBusy) "রানিং..." else "সচল",
-                    color = LeafGreenBright,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            // Current active programming step
-            Text(
-                text = "> $activeStatus",
-                color = LeafGreenBright,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            HorizontalDivider(
-                color = Color(0xFF1D3E1E),
-                thickness = 1.dp,
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
-
-            // Step-by-step live programming trace in bright leaf green
-            LazyColumn(
-                userScrollEnabled = false,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(logs.take(12), key = { it.id }) { item ->
-                    val prefixSymbol = when (item.level) {
-                        BackendLogLevel.SUCCESS -> "✓"
-                        BackendLogLevel.WORKING -> "⟳"
-                        BackendLogLevel.WARNING -> "!"
-                        BackendLogLevel.INFO -> "›"
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = item.time,
-                            color = LeafGreenTime,
-                            fontSize = 9.5.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = prefixSymbol,
-                            color = LeafGreenHeader,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = item.message,
-                            color = LeafGreenPrimary,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
         }
     }
 }
